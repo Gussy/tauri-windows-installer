@@ -1,6 +1,11 @@
 [package]
-name = "installer"
+name = "tauri-windows-installer"
 version = "0.1.0"
 edition = "2021"
+build = "build.rs"
 
 [dependencies]
+toml = "0.8.19"
+
+[build-dependencies]
+toml = "0.8.19"
