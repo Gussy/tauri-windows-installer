@@ -1,3 +1,7 @@
 [external]
 path = "../target/debug/"
 program = "demo-app"
+
+
+[installer]
+bundle_webview2 = true

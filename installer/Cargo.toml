@@ -8,4 +8,6 @@ build = "build.rs"
 toml = "0.8.19"
 
 [build-dependencies]
+reqwest = { version = "0.12.5", features = ["blocking"] }
+tokio = "1.39.2"
 toml = "0.8.19"
