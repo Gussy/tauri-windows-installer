@@ -1,0 +1,36 @@
+{
+  // Editor
+  "files.exclude": {
+    // General
+    "**/.git": true,
+    "**/.svn": true,
+    "**/.hg": true,
+    "**/CVS": true,
+    "**/.DS_Store": true,
+    "**/Thumbs.db": true,
+
+    // Hermit
+    ".hermit": true,
+
+    // Rust
+    "**/dist/": true,
+    "**/target": true,
+
+    // Node
+    "**/node_modules": true,
+    "**/.turbo": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/.pnp.*": true,
+    "pnpm-lock.yaml": true
+  },
+
+  // Hermit
+  "terminal.integrated.env.osx": {
+    "ACTIVE_HERMIT": null,
+    "HERMIT_ENV": null,
+    "HERMIT_ENV_OPS": null,
+    "HERMIT_BIN": null
+  }
+}
