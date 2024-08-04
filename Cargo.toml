@@ -1,0 +1,5 @@
+[workspace]
+members = ["demo-app/src-tauri", "installer"]
+default-members = ["installer"]
+
+resolver = "2"
