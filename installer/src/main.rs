@@ -19,6 +19,10 @@ fn main() {
         println!("Webview2 bundled: false");
     }
 
+    // Check if WebView2 runtime is installed
+    let webview2_installed = webview2.installed;
+    println!("Webview2 installed: {}", webview2_installed);
+
     // TODO:
     // - Check for webview2 runtime
     // - Run webview2 installer if needed

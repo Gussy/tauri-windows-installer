@@ -3572,6 +3572,7 @@ dependencies = [
  "reqwest",
  "tokio",
  "toml 0.8.19",
+ "winreg",
 ]
 
 [[package]]
