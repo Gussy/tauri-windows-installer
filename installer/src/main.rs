@@ -1,13 +1,15 @@
-mod binary;
-use crate::binary::Binary;
-
+mod application;
+mod bundle;
 mod webview2;
+
+use crate::application::Application;
+use crate::bundle::Bundle;
 use crate::webview2::Webview2;
 
 fn main() {
     // Handle bundled external program
-    let binary = Binary::load();
-    println!("External program: {}", binary.name);
+    let app = Application::load();
+    println!("Application: {}", app.name);
 
     // Handle bundled WebView2 runtime
     let webview2 = Webview2::load();

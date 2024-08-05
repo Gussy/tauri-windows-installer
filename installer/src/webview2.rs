@@ -1,3 +1,4 @@
+use crate::Bundle;
 use anyhow::{anyhow, Result};
 use std::env;
 use std::fs;
@@ -7,12 +8,11 @@ pub struct Webview2 {
     pub bundled: bool,
     pub data: Option<Vec<u8>>,
     pub installed: bool,
-
     name: String,
 }
 
-impl Webview2 {
-    pub fn load() -> Self {
+impl Bundle for Webview2 {
+    fn load() -> Self {
         let bundled = env!("WEBVIEW2_BUNDLED") == "true";
         let name = env!("WEBVIEW2_BUNDLED_NAME").to_string();
 
@@ -24,7 +24,7 @@ impl Webview2 {
         Self {
             bundled,
             data,
-            installed: Self::installed(),
+            installed: Self::is_installed(),
             name,
         }
     }
@@ -32,14 +32,11 @@ impl Webview2 {
     fn load_data(name: &str) -> Vec<u8> {
         let out_dir = env!("OUT_DIR");
         let binary_path = format!("{}/{}", out_dir, name);
-        println!("Webview2 exe path: {}", binary_path);
         fs::read(&binary_path).expect("Failed to read external program binary")
     }
-}
 
-#[cfg(target_os = "windows")]
-impl Webview2 {
-    fn installed() -> bool {
+    #[cfg(target_os = "windows")]
+    fn is_installed() -> bool {
         use webview2_com::{Microsoft::Web::WebView2::Win32::*, *};
         use windows::core::{PCWSTR, PWSTR};
         let mut versioninfo = PWSTR::null();
@@ -60,7 +57,8 @@ impl Webview2 {
         false
     }
 
-    pub fn install(&self, quiet: bool) -> Result<()> {
+    #[cfg(target_os = "windows")]
+    fn install(&self, quiet: bool) -> Result<()> {
         let args = if quiet {
             vec!["/silent", "/install"]
         } else {
@@ -86,15 +84,14 @@ impl Webview2 {
             _ => Err(anyhow!("Installer failed with exit code: {}", result)),
         }
     }
-}
 
-#[cfg(not(target_os = "windows"))]
-impl Webview2 {
-    fn installed() -> bool {
+    #[cfg(not(target_os = "windows"))]
+    fn is_installed() -> bool {
         true
     }
 
-    pub fn install(&self, _quiet: bool) -> Result<()> {
+    #[cfg(not(target_os = "windows"))]
+    fn install(&self, _quiet: bool) -> Result<()> {
         Err(anyhow!(
             "WebView2 installation is not supported on this platform."
         ))
