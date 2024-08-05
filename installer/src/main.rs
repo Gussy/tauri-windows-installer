@@ -2,12 +2,14 @@ mod application;
 mod bundle;
 mod dialogs;
 mod manifest;
+mod process;
 mod webview2;
 mod windows;
 
 use crate::application::Application;
 use crate::bundle::Bundle;
 use crate::manifest::extract_manifest_from_data;
+use crate::process::find_and_kill_processes_from_directory;
 use crate::webview2::Webview2;
 use crate::windows::{get_local_app_data, string_to_u16};
 
@@ -88,6 +90,10 @@ fn main() {
         println!("User chose to overwrite existing installation.");
 
         // Force stop the application if it is running
+        match find_and_kill_processes_from_directory(root_path_str) {
+            Ok(_) => println!("All processes from {} have been terminated.", root_path_str),
+            Err(e) => eprintln!("Failed to terminate processes: {}", e),
+        }
 
         // Rename the existing installation directory
     }

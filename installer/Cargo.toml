@@ -6,6 +6,7 @@ build = "build.rs"
 
 [dependencies]
 anyhow = "1.0.86"
+sysinfo = "0.31.2"
 tempdir = "0.3.7"
 toml = "0.8.19"
 winapi = { version = "0.3.9", features = ["winuser", "libloaderapi"] }
