@@ -1,10 +1,15 @@
 mod application;
 mod bundle;
 mod webview2;
+mod windows;
 
 use crate::application::Application;
 use crate::bundle::Bundle;
 use crate::webview2::Webview2;
+use crate::windows::get_local_app_data;
+
+use std::fs;
+use std::path::Path;
 
 fn main() {
     // Handle bundled external program
@@ -24,6 +29,16 @@ fn main() {
             .install(false)
             .expect("Failed to install webview2 runtime");
     }
+
+    // Determine the installation directory
+    println!("Determining install directory...");
+    let appdata = get_local_app_data().expect("Failed to get local app data path");
+    let root_path = Path::new(&appdata).join(&app.id);
+    if !root_path.exists() {
+        fs::create_dir_all(&root_path).expect("Failed to create installation directory");
+    }
+    let root_path_str = root_path.to_str().unwrap();
+    println!("Installation Directory: {:?}", root_path_str);
 
     // TODO:
     // - Extract and copy the bundled installer

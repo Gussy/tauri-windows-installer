@@ -5,6 +5,7 @@ use std::fs;
 
 pub struct Application {
     pub name: String,
+    pub id: String,
     pub data: Vec<u8>,
 }
 
@@ -12,7 +13,8 @@ impl Bundle for Application {
     fn load() -> Self {
         let name = env!("BUNDLED_APP_NAME").to_string();
         let data = Self::load_data(&name);
-        Self { name, data }
+        let id = env!("BUNDLED_APP_ID").to_string();
+        Self { name, id, data }
     }
 
     fn load_data(name: &str) -> Vec<u8> {

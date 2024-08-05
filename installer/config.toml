@@ -1,6 +1,7 @@
 [external]
 path = "../target/debug/"
 program = "demo-app.exe"
+app_id = "com.example.demo-app"
 
 
 [installer]

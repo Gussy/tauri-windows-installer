@@ -10,7 +10,12 @@ toml = "0.8.19"
 
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.32.0"
-windows = "0.58.0"
+windows = { version = "0.58.0", features = [
+    "Win32_UI",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+    "Win32_UI_Shell_PropertiesSystem",
+] }
 
 [build-dependencies]
 reqwest = { version = "0.12.5", features = ["blocking"] }

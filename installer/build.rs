@@ -22,7 +22,11 @@ fn main() {
         .expect("Failed to get external program path");
 
     // Set environment variables for the program
+    let app_id = config["external"]["app_id"]
+        .as_str()
+        .expect("Failed to get application id");
     println!("cargo:rustc-env=BUNDLED_APP_NAME={}", external_program);
+    println!("cargo:rustc-env=BUNDLED_APP_ID={}", app_id);
 
     // Copy the external program to the output directory
     let source_path = PathBuf::from(external_path).join(external_program);
