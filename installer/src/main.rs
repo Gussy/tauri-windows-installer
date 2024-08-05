@@ -1,5 +1,6 @@
 mod application;
 mod bundle;
+mod dialogs;
 mod webview2;
 mod windows;
 
@@ -10,8 +11,8 @@ use crate::windows::{get_local_app_data, string_to_u16};
 
 use ::windows::core::PCWSTR;
 use ::windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
-use std::fs;
 use std::path::Path;
+use std::{fs, io};
 
 fn main() {
     // Handle bundled application
@@ -43,7 +44,7 @@ fn main() {
     println!("Installation Directory: {:?}", root_path_str);
 
     // Check if there is enough space to install the application
-    let required_space = app.data.len() as u64;
+    let required_space = app.size as u64;
     println!("Required disk space: {}", required_space);
 
     let mut free_space: u64 = 0;
@@ -66,6 +67,24 @@ fn main() {
         format_bytes(required_space)
     );
 
+    // TODO: Check if the application supports this OS version and architecture
+
+    // let mut root_path_renamed = String::new();
+    // Check if the application is already installed
+    if !is_directory_empty(&root_path).unwrap() {
+        let result = dialogs::show_overwrite_repair_dialog(&app, false);
+
+        if !result {
+            println!("User cancelled installation");
+            return;
+        }
+        println!("User chose to overwrite existing installation.");
+
+        // Force stop the application if it is running
+
+        // Rename the existing installation directory
+    }
+
     // TODO:
     // - Extract and copy the bundled installer
     // - Set the windows registry keys
@@ -83,4 +102,9 @@ fn format_bytes(bytes: u64) -> String {
     }
 
     format!("{:.2} {}", size, units[unit_index])
+}
+
+fn is_directory_empty(path: &Path) -> io::Result<bool> {
+    let mut entries = fs::read_dir(path)?;
+    Ok(entries.next().is_none())
 }

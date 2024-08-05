@@ -5,21 +5,36 @@ use std::fs;
 
 pub struct Application {
     pub name: String,
+    pub version: String,
     pub id: String,
+
+    pub exe: String,
     pub data: Vec<u8>,
+    pub size: u64,
 }
 
 impl Bundle for Application {
     fn load() -> Self {
         let name = env!("BUNDLED_APP_NAME").to_string();
-        let data = Self::load_data(&name);
+        let version = env!("BUNDLED_APP_VERSION").to_string();
         let id = env!("BUNDLED_APP_ID").to_string();
-        Self { name, id, data }
+
+        let exe = env!("BUNDLED_APP_EXE").to_string();
+        let data = Self::load_data(&exe);
+
+        Self {
+            name,
+            version,
+            id,
+            exe,
+            data: data.clone(),
+            size: data.clone().len() as u64,
+        }
     }
 
-    fn load_data(name: &str) -> Vec<u8> {
+    fn load_data(exe: &str) -> Vec<u8> {
         let out_dir = env!("OUT_DIR");
-        let binary_path = format!("{}/{}", out_dir, name);
+        let binary_path = format!("{}/{}", out_dir, exe);
         fs::read(&binary_path).expect("Failed to read external program binary")
     }
 

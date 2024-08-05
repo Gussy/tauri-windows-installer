@@ -1,3 +1,4 @@
+use embed_manifest::{embed_manifest, new_manifest};
 use reqwest::blocking::get;
 use std::env;
 use std::fs;
@@ -8,6 +9,12 @@ const WEBVIEW2_EVERGREEN_URL: &str = "https://go.microsoft.com/fwlink/p/?LinkId=
 const WEBVIEW2_EVERGREEN_EXE: &str = "MicrosoftEdgeWebview2Setup.exe";
 
 fn main() {
+    // Embed the windows app.manifest
+    if std::env::var_os("CARGO_CFG_WINDOWS").is_some() {
+        embed_manifest(new_manifest("app.manifest")).expect("unable to embed manifest file");
+        println!("cargo:rerun-if-changed=app.manifest");
+    }
+
     let config_path = "config.toml";
     let config_contents = fs::read_to_string(config_path).expect("Failed to read config file");
     let config: toml::Value =
@@ -25,7 +32,15 @@ fn main() {
     let app_id = config["application"]["id"]
         .as_str()
         .expect("Failed to get application id");
-    println!("cargo:rustc-env=BUNDLED_APP_NAME={}", application_exe);
+    let app_name = config["application"]["name"]
+        .as_str()
+        .expect("Failed to get application name");
+    let app_version = config["application"]["version"]
+        .as_str()
+        .expect("Failed to get application version");
+    println!("cargo:rustc-env=BUNDLED_APP_EXE={}", application_exe);
+    println!("cargo:rustc-env=BUNDLED_APP_NAME={}", app_name);
+    println!("cargo:rustc-env=BUNDLED_APP_VERSION={}", app_version);
     println!("cargo:rustc-env=BUNDLED_APP_ID={}", app_id);
 
     // Copy the application to the output directory

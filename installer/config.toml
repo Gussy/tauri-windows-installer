@@ -1,4 +1,6 @@
 [application]
+name = "Demo App"
+version = "0.1.0"
 id = "com.example.demo-app"
 path = "../target/debug/"
 program = "demo-app.exe"
