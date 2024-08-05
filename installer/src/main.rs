@@ -15,10 +15,12 @@ use crate::windows::{get_local_app_data, string_to_u16};
 
 use ::windows::core::PCWSTR;
 use ::windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+use anyhow::{Context, Result};
+use process::spawn_detached_process;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::{fs, io};
 
 fn main() {
@@ -112,11 +114,10 @@ fn main() {
     println!("Preparing and cleaning installation directory...");
     remove_dir_all::ensure_empty_dir(&root_path).expect("Failed to clean installation directory");
 
-    println!("Extracting application to installation directory...");
-    let application_path = root_path.join(&app.exe);
-    let mut file = fs::File::create(application_path).expect("Failed to create application file");
-    let install_result = file.write_all(&app.data);
+    // Install the application
+    let install_result = install(&app, &root_path);
 
+    // Handle rollback if installation fails
     if install_result.is_ok() {
         println!("Installation completed successfully!");
         if !root_path_renamed.is_empty() {
@@ -124,7 +125,7 @@ fn main() {
             let _ = fs::remove_dir_all(&root_path_renamed);
         }
     } else {
-        println!("Installation failed!");
+        println!("Installation failed! {}", install_result.unwrap_err());
         if !root_path_renamed.is_empty() {
             println!("Rolling back installation...");
             let _ = find_and_kill_processes_from_directory(root_path_str);
@@ -136,7 +137,32 @@ fn main() {
     // TODO:
     // - Set the windows registry keys
     // - Handle uninstall with command line flag
-    // - Start the application
+}
+
+fn install(app: &Application, root_path: &PathBuf) -> Result<()> {
+    println!("Starting installation!");
+
+    println!("Extracting application to installation directory...");
+    let application_path = root_path.join(&app.exe);
+
+    // Create and write to the application file
+    let mut file = fs::File::create(&application_path).with_context(|| {
+        format!(
+            "Failed to create application file at {:?}",
+            application_path
+        )
+    })?;
+    file.write_all(&app.data)
+        .with_context(|| format!("Failed to write application data to {:?}", application_path))?;
+
+    // Close the file
+    drop(file);
+
+    // Start the application
+    spawn_detached_process(application_path.clone())
+        .with_context(|| format!("Failed to start application at {:?}", application_path))?;
+
+    Ok(())
 }
 
 fn format_bytes(bytes: u64) -> String {

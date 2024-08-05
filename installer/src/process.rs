@@ -1,4 +1,6 @@
-use std::fs;
+use anyhow::{anyhow, bail, Result};
+use std::{fs, path::PathBuf, process::Command as Process};
+use windows::Win32::UI::WindowsAndMessaging::AllowSetForegroundWindow;
 
 use sysinfo::Signal;
 
@@ -36,6 +38,26 @@ pub fn find_and_kill_processes_from_directory(
             process.kill_with(Signal::Kill);
         }
     }
+
+    Ok(())
+}
+
+pub fn spawn_detached_process(exe_path: PathBuf) -> Result<()> {
+    let exe_to_execute = std::path::Path::new(&exe_path);
+    if !exe_to_execute.exists() {
+        bail!(
+            "Unable to find executable to start: '{}'",
+            exe_to_execute.to_string_lossy()
+        );
+    }
+
+    let mut exe_launch = Process::new(&exe_to_execute);
+
+    println!("About to launch: '{}'", exe_to_execute.to_string_lossy());
+    let child = exe_launch
+        .spawn()
+        .map_err(|z| anyhow!("Failed to start application ({}).", z))?;
+    let _ = unsafe { AllowSetForegroundWindow(child.id()) };
 
     Ok(())
 }
