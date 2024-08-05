@@ -12,7 +12,7 @@ use std::fs;
 use std::path::Path;
 
 fn main() {
-    // Handle bundled external program
+    // Handle bundled application
     let app = Application::load();
     println!("Application: {}", app.name);
 

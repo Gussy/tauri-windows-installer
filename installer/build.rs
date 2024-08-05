@@ -13,36 +13,36 @@ fn main() {
     let config: toml::Value =
         toml::from_str(&config_contents).expect("Failed to parse config file");
 
-    // Get the external program filename and path
-    let external_program = config["external"]["program"]
+    // Get the application filename and path
+    let application_exe = config["application"]["program"]
         .as_str()
-        .expect("Failed to get external program filename");
-    let external_path = config["external"]["path"]
+        .expect("Failed to get application filename");
+    let application_path = config["application"]["path"]
         .as_str()
-        .expect("Failed to get external program path");
+        .expect("Failed to get application path");
 
     // Set environment variables for the program
-    let app_id = config["external"]["app_id"]
+    let app_id = config["application"]["id"]
         .as_str()
         .expect("Failed to get application id");
-    println!("cargo:rustc-env=BUNDLED_APP_NAME={}", external_program);
+    println!("cargo:rustc-env=BUNDLED_APP_NAME={}", application_exe);
     println!("cargo:rustc-env=BUNDLED_APP_ID={}", app_id);
 
-    // Copy the external program to the output directory
-    let source_path = PathBuf::from(external_path).join(external_program);
+    // Copy the application to the output directory
+    let source_path = PathBuf::from(application_path).join(application_exe);
     let out_dir = env::var("OUT_DIR").unwrap();
-    let dest_path = PathBuf::from(&out_dir).join(external_program);
-    fs::copy(&source_path, &dest_path).expect("Failed to copy external program");
+    let dest_path = PathBuf::from(&out_dir).join(application_exe);
+    fs::copy(&source_path, &dest_path).expect("Failed to copy application exe");
 
     println!("cargo:rerun-if-changed={}", source_path.display());
     println!("cargo:rerun-if-changed={}", config_path);
 
     // Check if WebView2 runtime should be bundled
-    let bundle_webview2 = config["installer"]["bundle_webview2"]
-        .as_bool()
+    let bundle_webview2 = config["webview2"]["bundle"]
+        .as_str()
         .expect("Failed to get bundle_webview2 value");
 
-    if bundle_webview2 {
+    if bundle_webview2 == "evergreen" {
         // Download and bundle WebView2 runtime
         let out_dir = env::var("OUT_DIR").unwrap();
         let webview2_path = PathBuf::from(&out_dir).join(WEBVIEW2_EVERGREEN_EXE);

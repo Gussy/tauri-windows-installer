@@ -1,8 +1,7 @@
-[external]
+[application]
+id = "com.example.demo-app"
 path = "../target/debug/"
 program = "demo-app.exe"
-app_id = "com.example.demo-app"
 
-
-[installer]
-bundle_webview2 = true
+[webview2]
+bundle = "evergreen"
