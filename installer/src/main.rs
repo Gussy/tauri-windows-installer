@@ -15,6 +15,8 @@ use crate::windows::{get_local_app_data, string_to_u16};
 
 use ::windows::core::PCWSTR;
 use ::windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+use rand::distributions::Alphanumeric;
+use rand::{thread_rng, Rng};
 use std::path::Path;
 use std::{fs, io};
 
@@ -78,7 +80,8 @@ fn main() {
         Err(e) => eprintln!("Failed to extract manifest: {}", e),
     }
 
-    // let mut root_path_renamed = String::new();
+    let mut root_path_renamed = String::new();
+
     // Check if the application is already installed
     if !is_directory_empty(&root_path).unwrap() {
         let result = dialogs::show_overwrite_repair_dialog(&app, false);
@@ -96,6 +99,13 @@ fn main() {
         }
 
         // Rename the existing installation directory
+        root_path_renamed = format!("{}_{}", root_path_str, generate_random_string(8));
+        println!(
+            "Renaming existing directory to '{}' to allow rollback...",
+            root_path_renamed
+        );
+        fs::rename(&root_path, &root_path_renamed)
+            .expect("Failed to rename existing installation directory");
     }
 
     // TODO:
@@ -120,4 +130,12 @@ fn format_bytes(bytes: u64) -> String {
 fn is_directory_empty(path: &Path) -> io::Result<bool> {
     let mut entries = fs::read_dir(path)?;
     Ok(entries.next().is_none())
+}
+
+fn generate_random_string(length: usize) -> String {
+    let rng = thread_rng();
+    rng.sample_iter(&Alphanumeric)
+        .take(length)
+        .map(char::from)
+        .collect()
 }

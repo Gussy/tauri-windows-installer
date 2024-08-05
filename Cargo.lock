@@ -3698,6 +3698,7 @@ dependencies = [
  "anyhow",
  "embed-manifest",
  "embed-resource",
+ "rand 0.8.5",
  "reqwest",
  "sysinfo",
  "tempdir",
