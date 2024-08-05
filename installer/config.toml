@@ -1,6 +1,6 @@
 [external]
 path = "../target/debug/"
-program = "demo-app"
+program = "demo-app.exe"
 
 
 [installer]
