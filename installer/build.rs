@@ -4,8 +4,8 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 
-const WEBVIEW2_URL: &str = "https://go.microsoft.com/fwlink/p/?LinkId=2124703";
-const WEBVIEW2_EXE: &str = "MicrosoftEdgeWebview2Setup.exe";
+const WEBVIEW2_EVERGREEN_URL: &str = "https://go.microsoft.com/fwlink/p/?LinkId=2124703";
+const WEBVIEW2_EVERGREEN_EXE: &str = "MicrosoftEdgeWebview2Setup.exe";
 
 fn main() {
     let config_path = "config.toml";
@@ -41,17 +41,20 @@ fn main() {
     if bundle_webview2 {
         // Download and bundle WebView2 runtime
         let out_dir = env::var("OUT_DIR").unwrap();
-        let webview2_path = PathBuf::from(&out_dir).join(WEBVIEW2_EXE);
+        let webview2_path = PathBuf::from(&out_dir).join(WEBVIEW2_EVERGREEN_EXE);
 
         if !webview2_path.exists() {
-            let response = get(WEBVIEW2_URL).expect("Failed to download file");
+            let response = get(WEBVIEW2_EVERGREEN_URL).expect("Failed to download file");
             let mut file = fs::File::create(webview2_path).expect("Failed to create file");
             let bytes = response.bytes().expect("Failed to read response bytes");
             file.write_all(&bytes).expect("Failed to write to file");
         }
 
         println!("cargo:rustc-env=WEBVIEW2_BUNDLED=true");
-        println!("cargo:rustc-env=WEBVIEW2_BUNDLED_NAME={}", WEBVIEW2_EXE);
+        println!(
+            "cargo:rustc-env=WEBVIEW2_BUNDLED_NAME={}",
+            WEBVIEW2_EVERGREEN_EXE
+        );
     } else {
         println!("cargo:rustc-env=WEBVIEW2_BUNDLED=false");
         println!("cargo:rustc-env=WEBVIEW2_BUNDLED_NAME=");
