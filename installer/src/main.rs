@@ -1,11 +1,13 @@
 mod application;
 mod bundle;
 mod dialogs;
+mod manifest;
 mod webview2;
 mod windows;
 
 use crate::application::Application;
 use crate::bundle::Bundle;
+use crate::manifest::extract_manifest_from_data;
 use crate::webview2::Webview2;
 use crate::windows::{get_local_app_data, string_to_u16};
 
@@ -68,6 +70,11 @@ fn main() {
     );
 
     // TODO: Check if the application supports this OS version and architecture
+    let binary_data = app.data.clone();
+    match extract_manifest_from_data(&binary_data) {
+        Ok(_) => println!("Manifest extracted successfully."),
+        Err(e) => eprintln!("Failed to extract manifest: {}", e),
+    }
 
     // let mut root_path_renamed = String::new();
     // Check if the application is already installed

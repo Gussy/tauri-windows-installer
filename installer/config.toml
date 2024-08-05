@@ -2,7 +2,7 @@
 name = "Demo App"
 version = "0.1.0"
 id = "com.example.demo-app"
-path = "../target/debug/"
+path = "../target/release/"
 program = "demo-app.exe"
 
 [webview2]
