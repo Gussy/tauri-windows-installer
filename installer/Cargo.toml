@@ -7,6 +7,7 @@ build = "build.rs"
 [dependencies]
 anyhow = "1.0.86"
 rand = "0.8.5"
+remove_dir_all = "0.8.3"
 sysinfo = "0.31.2"
 tempdir = "0.3.7"
 toml = "0.8.19"

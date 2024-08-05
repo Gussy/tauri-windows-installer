@@ -17,6 +17,7 @@ use ::windows::core::PCWSTR;
 use ::windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
+use std::io::Write;
 use std::path::Path;
 use std::{fs, io};
 
@@ -108,10 +109,34 @@ fn main() {
             .expect("Failed to rename existing installation directory");
     }
 
+    println!("Preparing and cleaning installation directory...");
+    remove_dir_all::ensure_empty_dir(&root_path).expect("Failed to clean installation directory");
+
+    println!("Extracting application to installation directory...");
+    let application_path = root_path.join(&app.exe);
+    let mut file = fs::File::create(application_path).expect("Failed to create application file");
+    let install_result = file.write_all(&app.data);
+
+    if install_result.is_ok() {
+        println!("Installation completed successfully!");
+        if !root_path_renamed.is_empty() {
+            println!("Removing rollback directory...");
+            let _ = fs::remove_dir_all(&root_path_renamed);
+        }
+    } else {
+        println!("Installation failed!");
+        if !root_path_renamed.is_empty() {
+            println!("Rolling back installation...");
+            let _ = find_and_kill_processes_from_directory(root_path_str);
+            let _ = fs::remove_dir_all(&root_path);
+            let _ = fs::rename(&root_path_renamed, &root_path);
+        }
+    }
+
     // TODO:
-    // - Extract and copy the bundled installer
     // - Set the windows registry keys
     // - Handle uninstall with command line flag
+    // - Start the application
 }
 
 fn format_bytes(bytes: u64) -> String {
