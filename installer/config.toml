@@ -1,7 +1,7 @@
 [application]
 name = "Demo App"
 version = "0.1.0"
-id = "com.example.demo-app"
+id = "com.gussy.demo-app"
 path = "../target/release/"
 program = "demo-app.exe"
 
