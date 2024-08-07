@@ -44,6 +44,8 @@ pub fn write_uninstall_entry(app: &Application, root_path: &PathBuf) -> Result<(
     let root_path_str = root_path.to_string_lossy().to_string();
     let main_exe_path_binding = root_path.join(&app.exe);
     let main_exe_path = main_exe_path_binding.to_str().unwrap();
+    let uninstall_exe_path_binding = root_path.join(format!("{}-uninstall.exe", app.name));
+    let uninstall_exe_path = uninstall_exe_path_binding.to_str().unwrap();
 
     let folder_size = fs_extra::dir::get_size(&root_path).unwrap();
     let version_str = &app.version;
@@ -51,8 +53,8 @@ pub fn write_uninstall_entry(app: &Application, root_path: &PathBuf) -> Result<(
     let now = Local::now();
     let formatted_date = format!("{}{:02}{:02}", now.year(), now.month(), now.day());
 
-    let uninstall_cmd = format!("\"{}\" --uninstall", &main_exe_path);
-    let uninstall_quiet = format!("\"{}\" --uninstall --silent", &main_exe_path);
+    let uninstall_cmd = format!("\"{}\"", &uninstall_exe_path);
+    let uninstall_quiet = format!("\"{}\" --silent", &uninstall_exe_path);
 
     // Open or create the app-specific subkey
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);

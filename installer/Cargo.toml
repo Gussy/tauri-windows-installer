@@ -2,7 +2,7 @@
 name = "tauri-windows-installer"
 version = "0.1.0"
 edition = "2021"
-build = "build.rs"
+default-run = "demo-app-setup"
 
 [dependencies]
 anyhow = "1.0.86"
@@ -49,6 +49,11 @@ windows = { version = "0.58.0", features = [
 [[bin]]
 name = "demo-app-setup"
 path = "src/main.rs"
+build = "build.rs"
+
+[[bin]]
+name = "demo-app-uninstall"
+path = "src/uninstall.rs"
 
 [build-dependencies]
 embed-resource = "2.4.3"
