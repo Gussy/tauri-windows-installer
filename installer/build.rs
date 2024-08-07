@@ -29,8 +29,14 @@ fn main() {
     let target_dir = PathBuf::from("target").join(&profile);
 
     // Get the tauri config path from the environment variables
-    let tauri_conf_path = get_env_var("TAURI_CONF_PATH", None);
-    println!("cargo:rerun-if-changed={}", tauri_conf_path);
+    let tauri_conf_path = PathBuf::from(get_env_var("TAURI_CONF_PATH", None))
+        .canonicalize()
+        .expect("Failed to get tauri config path");
+    let tauri_path_binding = PathBuf::from(tauri_conf_path.clone());
+    let tauri_path = tauri_path_binding
+        .parent()
+        .expect("Failed to get tauri root path");
+    println!("cargo:rerun-if-changed={}", tauri_conf_path.display());
 
     // Get the build target path from the environment variables
     let build_target_base: &str = &get_env_var("BUILD_TARGET_PATH", Some(".."));
@@ -62,12 +68,13 @@ fn main() {
     let dest_path = PathBuf::from(&out_dir).join(application_exe);
     fs::copy(&source_path, &dest_path).expect("Failed to copy application exe");
     println!("cargo:rerun-if-changed={}", source_path.display());
+    println!("cargo:rerun-if-changed={}", application_exe);
 
     // Check if WebView2 runtime should be bundled
     let bundle_webview2 = tauri_conf
         .plugins
         .0
-        .get("tauri-windows-installer")
+        .get(env!("CARGO_PKG_NAME"))
         .and_then(|p| p.get("webview2"))
         .and_then(|w| w.get("bundle"))
         .expect("Failed to get webview2 bundle value");
@@ -95,8 +102,36 @@ fn main() {
         println!("cargo:rustc-env=WEBVIEW2_BUNDLED_NAME=");
     }
 
-    // Set environment variable for the product name for the rename_executable build script
-    println!("cargo:rustc-env=PRODUCT_NAME={}", product_name);
+    // Get the icon path from the tauri configuration
+    let icon_path_str = tauri_conf
+        .plugins
+        .0
+        .get(env!("CARGO_PKG_NAME"))
+        .and_then(|p| p.get("icon"))
+        .expect("Failed to get webview2 bundle value")
+        .as_str()
+        .unwrap();
+    let icon_path = PathBuf::from(&icon_path_str);
+    let full_icon_path = PathBuf::from(&tauri_path).join(&icon_path);
+    let formatted_path = full_icon_path.to_str().unwrap().replace(r"\", r"\\");
+
+    // Generate the app.rc file
+    let rc_contents = format!(
+        r#"
+        32512 ICON "{}"
+    "#,
+        formatted_path
+    );
+    // TODO: Above is a hard-coded hack and would be cleaner and more complete if integrated with tauri
+
+    let rc_path = PathBuf::from(&out_dir).join("resource.rc");
+    fs::write(&rc_path, rc_contents).expect("Failed to write resource.rc");
+
+    // Compile the resource file
+    if std::env::var_os("CARGO_CFG_WINDOWS").is_some() {
+        embed_resource::compile(rc_path.to_str().unwrap(), embed_resource::NONE);
+        println!("cargo:rerun-if-changed={}", icon_path.display());
+    }
 }
 
 /// Gets an environment variable from the environment or .env file, or returns a default value if not found.
