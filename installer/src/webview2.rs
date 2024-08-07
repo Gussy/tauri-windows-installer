@@ -6,33 +6,35 @@ use std::process::Command as Process;
 
 pub struct Webview2 {
     pub bundled: bool,
+    pub exe: String,
     pub data: Option<Vec<u8>>,
     pub installed: bool,
-    name: String,
 }
 
 impl Bundle for Webview2 {
     fn load() -> Self {
         let bundled = env!("WEBVIEW2_BUNDLED") == "true";
-        let name = env!("WEBVIEW2_BUNDLED_NAME").to_string();
 
         let mut data = None;
         if bundled {
-            data = Some(Self::load_data(&name));
+            data = Some(Self::load_data());
         }
 
         Self {
             bundled,
+            exe: env!("WEBVIEW2_BUNDLED_NAME").to_string(),
             data,
             installed: Self::is_installed(),
-            name,
         }
     }
 
-    fn load_data(name: &str) -> Vec<u8> {
-        let out_dir = env!("OUT_DIR");
-        let binary_path = format!("{}/{}", out_dir, name);
-        fs::read(&binary_path).expect("Failed to read external program binary")
+    fn load_data() -> Vec<u8> {
+        include_bytes!(concat!(
+            env!("OUT_DIR"),
+            "\\",
+            env!("WEBVIEW2_BUNDLED_NAME")
+        ))
+        .to_vec()
     }
 
     #[cfg(target_os = "windows")]
@@ -67,7 +69,7 @@ impl Bundle for Webview2 {
 
         // Copy the installer to a temp location
         let temp_dir = env::temp_dir();
-        let installer_path = temp_dir.join(self.name.clone());
+        let installer_path = temp_dir.join(self.exe.clone());
         fs::write(&installer_path, self.data.as_ref().unwrap()).expect("Failed to write installer");
 
         // Run the installer
