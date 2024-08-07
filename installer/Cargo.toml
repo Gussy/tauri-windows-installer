@@ -49,7 +49,6 @@ windows = { version = "0.58.0", features = [
 [[bin]]
 name = "demo-app-setup"
 path = "src/main.rs"
-build = "build.rs"
 
 [[bin]]
 name = "demo-app-uninstall"

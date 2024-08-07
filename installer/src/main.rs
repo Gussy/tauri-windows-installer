@@ -152,17 +152,32 @@ fn install(app: &Application, root_path: &PathBuf) -> Result<()> {
     let application_path = root_path.join(&app.exe);
 
     // Create and write to the application file
-    let mut file = fs::File::create(&application_path).with_context(|| {
+    let mut app_file = fs::File::create(&application_path).with_context(|| {
         format!(
             "Failed to create application file at {:?}",
             application_path
         )
     })?;
-    file.write_all(&app.data)
+    app_file
+        .write_all(&app.data)
         .with_context(|| format!("Failed to write application data to {:?}", application_path))?;
+    drop(app_file);
 
-    // Close the file
-    drop(file);
+    // Create and write to the uninstall file
+    let uninstall_path = root_path.join(env!("BUNDLED_UNINSTALL_EXE"));
+    println!("Uninstall path: {:?}", uninstall_path);
+    let uninstall_binary_bytes = include_bytes!(concat!(
+        env!("OUT_DIR"),
+        "\\",
+        env!("BUNDLED_UNINSTALL_EXE")
+    ))
+    .to_vec();
+    let mut uninstall_file = fs::File::create(&uninstall_path)
+        .with_context(|| format!("Failed to create application file at {:?}", uninstall_path))?;
+    uninstall_file
+        .write_all(&uninstall_binary_bytes)
+        .with_context(|| format!("Failed to write application data to {:?}", uninstall_path))?;
+    drop(uninstall_file);
 
     // Start the application
     spawn_detached_process(application_path.clone())

@@ -64,11 +64,18 @@ fn main() {
     println!("cargo:rustc-env=BUNDLED_APP_ID={}", tauri_conf.identifier);
 
     // Copy the application to the output directory
-    let source_path = PathBuf::from(build_target_path).join(application_exe);
-    let dest_path = PathBuf::from(&out_dir).join(application_exe);
-    fs::copy(&source_path, &dest_path).expect("Failed to copy application exe");
-    println!("cargo:rerun-if-changed={}", source_path.display());
-    println!("cargo:rerun-if-changed={}", application_exe);
+    let app_source_path = PathBuf::from(build_target_path.clone()).join(application_exe);
+    let app_dest_path = PathBuf::from(&out_dir).join(application_exe);
+    fs::copy(&app_source_path, &app_dest_path).expect("Failed to copy application exe");
+    println!("cargo:rerun-if-changed={}", app_source_path.display());
+
+    // Copy the uninstall executable to the output directory
+    let uninstall_exe: &str = &format!("{}-uninstall{}", product_name, env::consts::EXE_SUFFIX);
+    let uninstall_source_path = PathBuf::from(build_target_path.clone()).join(uninstall_exe);
+    let uninstall_dest_path = PathBuf::from(&out_dir).join(uninstall_exe);
+    fs::copy(&uninstall_source_path, &uninstall_dest_path).expect("Failed to copy application exe");
+    println!("cargo:rerun-if-changed={}", uninstall_source_path.display());
+    println!("cargo:rustc-env=BUNDLED_UNINSTALL_EXE={}", uninstall_exe);
 
     // Check if WebView2 runtime should be bundled
     let bundle_webview2 = tauri_conf
