@@ -1,9 +1,0 @@
-[application]
-name = "Demo App"
-version = "0.1.0"
-id = "com.gussy.demo-app"
-path = "../target/release/"
-program = "demo-app.exe"
-
-[webview2]
-bundle = "evergreen"

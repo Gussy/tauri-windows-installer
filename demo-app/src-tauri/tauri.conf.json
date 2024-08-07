@@ -31,5 +31,12 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "tauri-windows-installer": {
+      "webview2": {
+        "bundle": "evergreen"
+      }
+    }
   }
 }
