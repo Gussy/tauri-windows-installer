@@ -118,13 +118,7 @@ fn main() {
     let install_result = install(&app, &root_path);
 
     // Handle rollback if installation fails
-    if install_result.is_ok() {
-        println!("Installation completed successfully!");
-        if !root_path_renamed.is_empty() {
-            println!("Removing rollback directory...");
-            let _ = fs::remove_dir_all(&root_path_renamed);
-        }
-    } else {
+    if install_result.is_ok() == false {
         println!("Installation failed! {}", install_result.unwrap_err());
         if !root_path_renamed.is_empty() {
             println!("Rolling back installation...");
@@ -132,10 +126,22 @@ fn main() {
             let _ = fs::remove_dir_all(&root_path);
             let _ = fs::rename(&root_path_renamed, &root_path);
         }
+
+        // exit the installer with an error code
+        std::process::exit(1);
     }
 
+    println!("Installation completed successfully!");
+    if !root_path_renamed.is_empty() {
+        println!("Removing rollback directory...");
+        let _ = fs::remove_dir_all(&root_path_renamed);
+    }
+
+    // Write the uninstall registry keys
+    windows::write_uninstall_entry(&app, &root_path)
+        .expect("Failed to write uninstall registry key");
+
     // TODO:
-    // - Set the windows registry keys
     // - Handle uninstall with command line flag
 }
 

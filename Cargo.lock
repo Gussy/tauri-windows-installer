@@ -349,8 +349,10 @@ checksum = "a21f936df1771bf62b77f047b726c4625ff2e8aa607c01ec06e5a05bd8463401"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
+ "js-sys",
  "num-traits",
  "serde",
+ "wasm-bindgen",
  "windows-targets 0.52.6",
 ]
 
@@ -891,6 +893,12 @@ dependencies = [
  "nix",
  "windows-sys 0.52.0",
 ]
+
+[[package]]
+name = "fs_extra"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42703706b716c37f96a77aea830392ad231f44c9e9a67872fa5548707e11b11c"
 
 [[package]]
 name = "fuchsia-cprng"
@@ -3778,9 +3786,11 @@ name = "tauri-windows-installer"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "dotenvy",
  "embed-manifest",
  "embed-resource",
+ "fs_extra",
  "rand 0.8.5",
  "remove_dir_all 0.8.3",
  "reqwest",
@@ -3792,6 +3802,7 @@ dependencies = [
  "webview2-com 0.32.0",
  "winapi",
  "windows 0.58.0",
+ "winreg",
  "winsafe",
 ]
 
