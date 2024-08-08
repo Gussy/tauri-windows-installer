@@ -1,5 +1,7 @@
 [workspace]
-members = ["demo-app/src-tauri", "installer"]
+resolver = "2"
+members = ["demo-app/src-tauri", "installer", "bundler"]
 default-members = ["installer"]
 
-resolver = "2"
+[workspace.dependencies]
+tauri = { version = "=2.0.0-rc.1" }
