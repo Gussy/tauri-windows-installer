@@ -20,6 +20,32 @@ Windows 10 versions earlier than _20H2_, the [WebView2 Evergreen Bootstrapper](h
 
 Windows 8 and earlier may work, but are not explicitly supported right now.
 
+## Building and Testing
+
+First the demo Tauri application must be built, then the `setup.exe`, then bundler can be called.
+
+```text
+cargo build
+cargo build --bin setup
+cd .\demo-app\
+pnpm tauri build
+cargo run --bin bundler -- -t .\demo-app\src-tauri\tauri.conf.json -a .\target\release\demo-app.exe
+```
+
+The output from the bundler should look something like this if everything worked:
+
+```text
+Packaging Tauri application...
+  Loading config: .\demo-app\src-tauri\tauri.conf.json
+  Loaded setup executable: setup.exe (2.0 MB bytes)
+  Bundling the webview2 evergreen bootstrapper...
+  Downloading WebView2 Evergreen: https://go.microsoft.com/fwlink/p/?LinkId=2124703
+  Loaded WebView2 Evergreen: MicrosoftEdgeWebview2Setup.exe (1.6 MB bytes)
+  Loaded application executable: demo-app.exe (10.1 MB bytes)
+Packaging complete.
+Created demo-app-setup.exe (13.7 MB)
+```
+
 ## Components
 
 ### Bundler `bundler.exe`
@@ -69,9 +95,11 @@ tauri_windows_installer::handle_uninstall(&"{app_id}");
 
 #### Uninstallation overview
 
-1. _TODO: Kill all running application processes_
-1. _TODO: Remove the installation directory_
+1. Kill all running application processes
+1. Remove the installation directory (except for the application executable)
 1. Remove the entry from the `HKEY_CURRENT_USER` registry
+1. Show a dialog box with the result of the uninstall
+1. Spawn a separate process to delete the installation directory
 
 ## TODO
 
@@ -84,5 +112,6 @@ tauri_windows_installer::handle_uninstall(&"{app_id}");
   - Embed versioning into `setup.exe`
   - Check the OS version and architecture
   - Improve the required space calculation
+  - Get publisher from somwhere for uninstall registry entry
 - Other
   - Setup GitHub Actions to build and release
