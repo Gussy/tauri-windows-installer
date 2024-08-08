@@ -1,6 +1,9 @@
+use std::path::PathBuf;
+
+use bundler::SetupPackage;
+
 pub trait Bundle {
-    fn load() -> Self;
-    fn load_data() -> Vec<u8>;
+    fn load(package: &SetupPackage) -> Self;
     fn is_installed() -> bool;
-    fn install(&self, quiet: bool) -> Result<(), anyhow::Error>;
+    fn install(&self, quiet: bool, path: &PathBuf) -> Result<(), anyhow::Error>;
 }
