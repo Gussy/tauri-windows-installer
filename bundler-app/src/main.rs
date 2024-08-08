@@ -1,17 +1,12 @@
-mod exe_packager;
-mod metadata;
-mod plugin_config;
-mod webview2;
-
-use crate::webview2::download_webview2_evergreen;
-
+use bundler::{
+    exe_packager::{ExePackager, SetupManifest},
+    plugin_config::{load_tauri_config, Webview2Bundle},
+    webview2::{download_webview2_evergreen, WEBVIEW2_EVERGREEN_EXE},
+};
 use bytesize::ByteSize;
 use clap::Parser;
 use colored::*;
-use exe_packager::{ExePackager, SetupManifest};
-use plugin_config::{load_tauri_config, Webview2Bundle};
 use std::{env, path::Path};
-use webview2::WEBVIEW2_EVERGREEN_EXE;
 
 /// Tauri Windows Installer Bundler
 #[derive(Parser, Debug)]

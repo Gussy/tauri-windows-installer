@@ -1,0 +1,15 @@
+[package]
+name = "bundler-app"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "bundler"
+path = "src/main.rs"
+
+
+[dependencies]
+bundler.workspace = true
+bytesize.workspace = true
+clap = { version = "4.5.13", features = ["derive"] }
+colored = "2.1.0"

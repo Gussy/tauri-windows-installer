@@ -1,9 +1,13 @@
 [workspace]
 resolver = "2"
-members = ["demo-app/src-tauri", "installer", "bundler"]
-default-members = ["installer", "bundler"]
+members = ["demo-app/src-tauri", "bundler", "bundler-app", "installer"]
+
+# Build order for "bundler-app" and "demo-app/src-tauri"
+# are important, therefore they are not built by default
+default-members = ["bundler", "installer"]
 
 [workspace.dependencies]
 tauri = { version = "=2.0.0-rc.1" }
+bytesize = "1.3.0"
 bundler = { path = "bundler" }
 tauri-windows-installer = { path = "installer" }

@@ -272,8 +272,6 @@ name = "bundler"
 version = "0.1.0"
 dependencies = [
  "bytesize",
- "clap",
- "colored",
  "dirs-next",
  "mockito",
  "reqwest",
@@ -281,6 +279,16 @@ dependencies = [
  "serde_json",
  "tauri",
  "tempfile",
+]
+
+[[package]]
+name = "bundler-app"
+version = "0.1.0"
+dependencies = [
+ "bundler",
+ "bytesize",
+ "clap",
+ "colored",
 ]
 
 [[package]]
