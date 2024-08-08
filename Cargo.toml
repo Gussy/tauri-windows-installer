@@ -1,6 +1,9 @@
 [workspace]
 resolver = "2"
 members = ["demo-app/src-tauri", "bundler", "bundler-app", "installer"]
+package.version = "0.1.0"
+package.edition = "2021"
+package.authors = ["@Gussy"]
 
 # Build order for "bundler-app" and "demo-app/src-tauri"
 # are important, therefore they are not built by default

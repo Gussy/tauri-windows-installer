@@ -1,8 +1,10 @@
 [package]
 name = "tauri-windows-installer"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
 default-run = "setup"
+
 
 [dependencies]
 bundler.workspace = true
