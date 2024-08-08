@@ -1,35 +1,50 @@
+// Prevent additional console window on Windows in release
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod application;
 mod bundle;
 mod dialogs;
-mod manifest;
 mod process;
 mod webview2;
 mod windows;
 
 use crate::application::Application;
 use crate::bundle::Bundle;
-use crate::manifest::extract_manifest_from_data;
 use crate::process::find_and_kill_processes_from_directory;
 use crate::webview2::Webview2;
 use crate::windows::{get_local_app_data, string_to_u16};
 
 use ::windows::core::PCWSTR;
 use ::windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
-use anyhow::{Context, Result};
-use process::spawn_detached_process;
+use bundler::extract_package;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::{fs, io};
 
 fn main() {
+    // Get name of the currently running bniary at runtime
+    let binary_name = PathBuf::from(
+        std::env::current_exe()
+            .unwrap()
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string(),
+    );
+
+    // Extract packages
+    let package = extract_package(&binary_name);
+    let manifest = &package.manifest;
+    println!("Application: {}", manifest.name);
+
     // Handle bundled application
-    let app = Application::load();
-    println!("Application: {}", app.name);
+    let app = Application::load(&package);
+    println!("Application: {}", app.data.len());
 
     // Handle bundled WebView2 runtime
-    let webview2 = Webview2::load();
+    let webview2 = Webview2::load(&package);
     println!("Webview2 bundled: {}", webview2.bundled);
 
     // Check if WebView2 runtime is installed
@@ -38,14 +53,14 @@ fn main() {
     if !webview2_installed {
         println!("Installing webview2 runtime...");
         webview2
-            .install(false)
+            .install(false, &PathBuf::new())
             .expect("Failed to install webview2 runtime");
     }
 
     // Determine the installation directory
     println!("Determining install directory...");
     let appdata = get_local_app_data().expect("Failed to get local app data path");
-    let root_path = Path::new(&appdata).join(&app.id);
+    let root_path = Path::new(&appdata).join(&manifest.identifier);
     if !root_path.exists() {
         fs::create_dir_all(&root_path).expect("Failed to create installation directory");
     }
@@ -63,7 +78,7 @@ fn main() {
         if free_space < required_space {
             panic!(
                 "{} requires at least {} disk space to be installed. There is only {} available.",
-                app.id,
+                manifest.identifier,
                 format_bytes(required_space),
                 format_bytes(free_space)
             );
@@ -77,17 +92,12 @@ fn main() {
     );
 
     // TODO: Check if the application supports this OS version and architecture
-    let binary_data = app.data.clone();
-    match extract_manifest_from_data(&binary_data) {
-        Ok(_) => println!("Manifest extracted successfully."),
-        Err(e) => eprintln!("Failed to extract manifest: {}", e),
-    }
 
     let mut root_path_renamed = String::new();
 
     // Check if the application is already installed
     if !is_directory_empty(&root_path).unwrap() {
-        let result = dialogs::show_overwrite_repair_dialog(&app, false);
+        let result = dialogs::show_overwrite_repair_dialog(&package.manifest, false);
 
         if !result {
             println!("User cancelled installation");
@@ -115,7 +125,8 @@ fn main() {
     remove_dir_all::ensure_empty_dir(&root_path).expect("Failed to clean installation directory");
 
     // Install the application
-    let install_result = install(&app, &root_path);
+    let quiet = false;
+    let install_result = app.install(quiet, &root_path);
 
     // Handle rollback if installation fails
     if install_result.is_ok() == false {
@@ -138,52 +149,8 @@ fn main() {
     }
 
     // Write the uninstall registry keys
-    windows::write_uninstall_entry(&app, &root_path)
+    windows::write_uninstall_entry(&package.manifest, &root_path)
         .expect("Failed to write uninstall registry key");
-
-    // TODO:
-    // - Handle uninstall with command line flag
-}
-
-fn install(app: &Application, root_path: &PathBuf) -> Result<()> {
-    println!("Starting installation!");
-
-    println!("Extracting application to installation directory...");
-    let application_path = root_path.join(&app.exe);
-
-    // Create and write to the application file
-    let mut app_file = fs::File::create(&application_path).with_context(|| {
-        format!(
-            "Failed to create application file at {:?}",
-            application_path
-        )
-    })?;
-    app_file
-        .write_all(&app.data)
-        .with_context(|| format!("Failed to write application data to {:?}", application_path))?;
-    drop(app_file);
-
-    // Create and write to the uninstall file
-    let uninstall_path = root_path.join(env!("BUNDLED_UNINSTALL_EXE"));
-    println!("Uninstall path: {:?}", uninstall_path);
-    let uninstall_binary_bytes = include_bytes!(concat!(
-        env!("OUT_DIR"),
-        "\\",
-        env!("BUNDLED_UNINSTALL_EXE")
-    ))
-    .to_vec();
-    let mut uninstall_file = fs::File::create(&uninstall_path)
-        .with_context(|| format!("Failed to create application file at {:?}", uninstall_path))?;
-    uninstall_file
-        .write_all(&uninstall_binary_bytes)
-        .with_context(|| format!("Failed to write application data to {:?}", uninstall_path))?;
-    drop(uninstall_file);
-
-    // Start the application
-    spawn_detached_process(application_path.clone())
-        .with_context(|| format!("Failed to start application at {:?}", application_path))?;
-
-    Ok(())
 }
 
 fn format_bytes(bytes: u64) -> String {

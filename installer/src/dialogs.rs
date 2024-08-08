@@ -1,20 +1,19 @@
+use bundler::SetupManifest;
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, IDYES, MB_ICONQUESTION, MB_YESNO};
 
-use crate::application::Application;
-
-pub fn show_overwrite_repair_dialog(app: &Application, silent: bool) -> bool {
+pub fn show_overwrite_repair_dialog(manifest: &SetupManifest, silent: bool) -> bool {
     if silent {
         return true;
     }
 
-    let lp_title = format!("{} Setup ({})", app.name, app.version)
+    let lp_title = format!("{} Setup ({})", manifest.name, manifest.version)
         .as_str()
         .to_wide_null();
-    let lp_text = format!("{} is already installed.\nThis application is installed on your computer. If it is not functioning correctly, you can attempt to repair it.\n\nDo you want to attempt to repair it?", app.name)
+    let lp_text = format!("{} is already installed.\nThis application is installed on your computer. If it is not functioning correctly, you can attempt to repair it.\n\nDo you want to attempt to repair it?", manifest.name)
         .as_str()
         .to_wide_null();
 

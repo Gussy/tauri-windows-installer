@@ -5,3 +5,4 @@ default-members = ["installer"]
 
 [workspace.dependencies]
 tauri = { version = "=2.0.0-rc.1" }
+bundler = { path = "bundler" }

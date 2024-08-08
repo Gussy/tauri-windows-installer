@@ -839,12 +839,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dotenvy"
-version = "0.15.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
-
-[[package]]
 name = "dpi"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3988,17 +3982,13 @@ name = "tauri-windows-installer"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bundler",
  "chrono",
- "dotenvy",
  "embed-manifest",
- "embed-resource",
  "fs_extra",
  "rand 0.8.5",
  "remove_dir_all 0.8.3",
- "reqwest",
- "serde_json",
  "sysinfo",
- "tauri",
  "tempdir",
  "toml 0.8.19",
  "webview2-com 0.32.0",

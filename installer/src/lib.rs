@@ -4,13 +4,15 @@ use winreg::RegKey;
 
 const UNINSTALL_STR: &'static str = "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
 
-fn main() {
-    println!("Uninstalling application...");
+pub fn handle_uninstall(app_id: &str) {
+    let args: Vec<String> = std::env::args().collect();
+    if args.contains(&"--uninstall".to_string()) {
+        println!("Uninstall flag detected. Running uninstall code...");
 
-    let app_id = env!("BUNDLED_APP_ID").to_string();
-    remove_uninstall_entry(&app_id).expect("Failed to remove uninstall entry");
+        remove_uninstall_entry(&app_id).expect("Failed to remove uninstall entry");
 
-    // TODO: Remove installation directory
+        std::process::exit(0);
+    }
 }
 
 fn remove_uninstall_entry(app_id: &str) -> Result<()> {

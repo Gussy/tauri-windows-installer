@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
+use bundler::SetupManifest;
 use chrono::prelude::*;
 use windows::{
     core::{GUID, PWSTR},
@@ -8,8 +9,6 @@ use windows::{
 };
 use winreg::enums::*;
 use winreg::RegKey;
-
-use crate::application::Application;
 
 const UNINSTALL_STR: &'static str = "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
 
@@ -39,16 +38,16 @@ pub fn string_to_u16<P: AsRef<str>>(input: P) -> Vec<u16> {
     input.encode_utf16().chain(Some(0)).collect::<Vec<u16>>()
 }
 
-pub fn write_uninstall_entry(app: &Application, root_path: &PathBuf) -> Result<()> {
+pub fn write_uninstall_entry(manifest: &SetupManifest, root_path: &PathBuf) -> Result<()> {
     println!("Writing uninstall registry key...");
     let root_path_str = root_path.to_string_lossy().to_string();
-    let main_exe_path_binding = root_path.join(&app.exe);
+    let main_exe_path_binding = root_path.join(&manifest.application);
     let main_exe_path = main_exe_path_binding.to_str().unwrap();
-    let uninstall_exe_path_binding = root_path.join(format!("{}-uninstall.exe", app.name));
+    let uninstall_exe_path_binding = root_path.join(format!("{}-uninstall.exe", manifest.name));
     let uninstall_exe_path = uninstall_exe_path_binding.to_str().unwrap();
 
     let folder_size = fs_extra::dir::get_size(&root_path).unwrap();
-    let version_str = &app.version;
+    let version_str = &manifest.version;
 
     let now = Local::now();
     let formatted_date = format!("{}{:02}{:02}", now.year(), now.month(), now.day());
@@ -59,11 +58,11 @@ pub fn write_uninstall_entry(app: &Application, root_path: &PathBuf) -> Result<(
     // Open or create the app-specific subkey
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
     let uninstall_key = hkcu.create_subkey(UNINSTALL_STR)?.0;
-    let app_key = uninstall_key.create_subkey(&app.id)?.0;
+    let app_key = uninstall_key.create_subkey(&manifest.identifier)?.0;
 
     // Set the values for the app-specific subkey
     app_key.set_value("DisplayIcon", &main_exe_path)?;
-    app_key.set_value("DisplayName", &app.name)?;
+    app_key.set_value("DisplayName", &manifest.name)?;
     app_key.set_value("DisplayVersion", version_str)?;
     app_key.set_value("InstallDate", &formatted_date)?;
     app_key.set_value("InstallLocation", &root_path_str)?;
