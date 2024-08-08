@@ -24,8 +24,7 @@ pub fn download_webview2_evergreen_impl(url: &str) -> Vec<u8> {
 
     let webview2_path = cache_dir.join(WEBVIEW2_EVERGREEN_EXE);
 
-    println!("  Downloading WebView2 Evergreen installer from: {}", url);
-    println!("  Cache directory: {}", cache_dir.display());
+    println!("  Downloading WebView2 Evergreen: {}", url);
 
     if !webview2_path.exists() {
         // Ensure the cache directory exists
@@ -41,7 +40,7 @@ pub fn download_webview2_evergreen_impl(url: &str) -> Vec<u8> {
     // Read the cached or newly downloaded file
     let webview2_data = fs::read(&webview2_path).expect("Failed to read file");
     println!(
-        "  Loaded WebView2 Evergreen installer: {} ({} bytes)",
+        "  Loaded WebView2 Evergreen: {} ({} bytes)",
         WEBVIEW2_EVERGREEN_EXE,
         ByteSize(webview2_data.len().try_into().unwrap())
     );

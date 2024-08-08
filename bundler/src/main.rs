@@ -31,7 +31,7 @@ fn main() {
 
     println!("{}", "Packaging Tauri application...".green().bold());
 
-    println!("  Loading Tauri configuration file: {}", args.tauri_conf);
+    println!("  Loading config: {}", args.tauri_conf);
     let (tauri_conf, plugin_config) = load_tauri_config(&args.tauri_conf);
 
     // Load the setup.exe file
@@ -54,14 +54,22 @@ fn main() {
         }
         None => {
             println!("  {}", "No webview2 bundle specified".blue());
-            // Perform actions when there is no bundle
         }
     }
 
     // Add the application executable to the package
     let app_exe = Path::new(&args.app).file_name().unwrap().to_str().unwrap();
     let app_data = std::fs::read(&args.app).expect("Failed to read application executable");
+    let app_size: u64 = app_data
+        .len()
+        .try_into()
+        .expect("Failed to convert app data length");
     packager.add_file(app_exe, app_data);
+    println!(
+        "  Loaded application executable: {} ({} bytes)",
+        app_exe,
+        ByteSize(app_size)
+    );
 
     // Create and add a manifest
     let manifest = SetupManifest {
@@ -76,7 +84,15 @@ fn main() {
     let output_filename = format!("{}-setup.exe", manifest.name);
     packager.package(Path::new(&output_filename));
 
+    let output_size = std::fs::metadata(&output_filename)
+        .expect("Failed to get output file metadata")
+        .len();
+
     println!("{}", "Packaging complete.".green().bold());
+    println!(
+        "{}",
+        format!("Created {} ({})", output_filename, ByteSize(output_size)).green()
+    );
 }
 
 fn load_embedded_setup() -> Vec<u8> {
