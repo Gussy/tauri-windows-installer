@@ -22,14 +22,18 @@ Windows 8 and earlier may work, but are not explicitly supported right now.
 
 ## Building and Testing
 
-First the demo Tauri application must be built, then the `setup.exe`, then bundler can be called.
+Build order is important and should follow these steps:
+
+1. Build the libraries
+1. Build the **release** `setup.exe` binary
+1. Build the **release** Tauri application
+1. Bundle the **release** Tauri application with the **release** `setup.exe` binary
 
 ```text
 cargo build
-cargo build --bin setup
-cd .\demo-app\
-pnpm tauri build
-cargo run --bin bundler -- -t .\demo-app\src-tauri\tauri.conf.json -a .\target\release\demo-app.exe
+cargo build --package tauri-windows-installer --bin setup --release
+cd .\demo-app\; pnpm tauri build; cd ..\
+cargo run --package bundler-app  --release -- -t .\demo-app\src-tauri\tauri.conf.json -a .\target\release\demo-app.exe
 ```
 
 The output from the bundler should look something like this if everything worked:
@@ -37,13 +41,13 @@ The output from the bundler should look something like this if everything worked
 ```text
 Packaging Tauri application...
   Loading config: .\demo-app\src-tauri\tauri.conf.json
-  Loaded setup executable: setup.exe (2.0 MB bytes)
+  Loaded setup executable: setup.exe (667.1 KB bytes)
   Bundling the webview2 evergreen bootstrapper...
   Downloading WebView2 Evergreen: https://go.microsoft.com/fwlink/p/?LinkId=2124703
   Loaded WebView2 Evergreen: MicrosoftEdgeWebview2Setup.exe (1.6 MB bytes)
   Loaded application executable: demo-app.exe (10.1 MB bytes)
 Packaging complete.
-Created demo-app-setup.exe (13.7 MB)
+Created demo-app-setup.exe (12.4 MB)
 ```
 
 ## Components
