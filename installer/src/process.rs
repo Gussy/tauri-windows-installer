@@ -1,8 +1,7 @@
 use anyhow::{anyhow, bail, Result};
 use std::{fs, path::PathBuf, process::Command as Process};
-use windows::Win32::UI::WindowsAndMessaging::AllowSetForegroundWindow;
-
 use sysinfo::Signal;
+use windows::Win32::UI::WindowsAndMessaging::AllowSetForegroundWindow;
 
 pub fn find_and_kill_processes_from_directory(
     directory: &str,

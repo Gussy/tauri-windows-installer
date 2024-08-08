@@ -5,6 +5,7 @@ mod application;
 mod bundle;
 mod dialogs;
 mod process;
+mod to_wide;
 mod webview2;
 mod windows;
 
@@ -17,6 +18,7 @@ use crate::windows::{get_local_app_data, string_to_u16};
 use ::windows::core::PCWSTR;
 use ::windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
 use bundler::extract_package;
+use dialogs::show_overwrite_repair_dialog;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use std::path::{Path, PathBuf};
@@ -100,7 +102,7 @@ fn main() {
 
     // Check if the application is already installed
     if !is_directory_empty(&root_path).unwrap() {
-        let result = dialogs::show_overwrite_repair_dialog(&package.manifest, false);
+        let result = show_overwrite_repair_dialog(&manifest.name, &manifest.version, false);
 
         if !result {
             println!("User cancelled installation");
@@ -152,7 +154,7 @@ fn main() {
     }
 
     // Write the uninstall registry keys
-    windows::write_uninstall_entry(&package.manifest, &root_path)
+    windows::write_uninstall_entry(&manifest, &root_path)
         .expect("Failed to write uninstall registry key");
 }
 
