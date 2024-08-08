@@ -41,7 +41,10 @@ fn main() {
 
     // Handle bundled application
     let app = Application::load(&package);
-    println!("Application: {}", app.data.len());
+    println!(
+        "Application size: {}",
+        format_bytes(app.data.len().try_into().unwrap())
+    );
 
     // Handle bundled WebView2 runtime
     let webview2 = Webview2::load(&package);
