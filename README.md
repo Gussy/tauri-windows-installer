@@ -35,23 +35,23 @@ Only 64-bit Windows is supported and tested. Windows 11 only supports 64-bit and
 
 Windows 8 and earlier may work, but are not explicitly supported right now.
 
-## Building and Testing
+## Usage
 
-Build order is important and should follow these steps:
-
-1. Build the libraries
-1. Build the **release** `setup.exe` binary
-1. Build the **release** Tauri application
-1. Bundle the **release** Tauri application with the **release** `setup.exe` binary
-
-```text
+```ps
+# Build all libraries and setup.exe
 cargo build
-cargo build --package tauri-windows-installer --bin setup --release
+
+# Install the bundler application
+cargo install --path bundler
+
+# Build the demo Tauri app
 cd .\demo-app\; pnpm tauri build; cd ..\
-cargo run --package bundler-app  --release -- -t .\demo-app\src-tauri\tauri.conf.json -a .\target\release\demo-app.exe
+
+# Bundle the demo app into an installer
+bundler.exe --tauri-conf '.\demo-app\src-tauri\tauri.conf.json' --app '.\target\release\demo-app.exe'
 ```
 
-The output from the bundler should look something like this if everything worked:
+The output from the bundler should look similar to this:
 
 ```text
 Packaging Tauri application...
