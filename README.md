@@ -8,15 +8,30 @@ This work is heavily inspired by [VeloPack](https://github.com/velopack/velopack
 
 - Simple installer - _Small file size and code complexity_
 - Opinionated implementation - _Lack of features is the main feature_
-- One click installs - _No wizards, just install and launch the app immedietly_
+- One click installs - _No wizards, just install and launch the app immediately_
 
 While this implementation is standalone and could be used with any Tauri projects, the end goal is to have this work (or something based on it) merged into the Tauri core as a built-in option for bundling on windows.
 
 ### Compatibility
 
+| Windows Version | 64-bit | 32-bit |
+|-----------------|--------|--------|
+| Windows 11 | ✅ | ❌ |
+| Windows 10 | ✅ | ❌ |
+| Windows 8 | ❌ | ❌ |
+| Windows 7 | ❌ | ❌ |
+
+#### WebView2
+
 Tauri apps on Windows require WebView2 which is [included with Windows 10](https://learn.microsoft.com/en-us/microsoft-365-apps/deploy/webview2-install#webview2-runtime-installation) _20H2_ and later versions.
 
 Windows 10 versions earlier than _20H2_, the [WebView2 Evergreen Bootstrapper](https://developer.microsoft.com/en-us/microsoft-edge/webview2/?form=MA13LH#download) (~1.6MB) can be bundled in to the setup executable. If WebView2 is not detected, if present the bootstrapper will be run, to streamline downloading and installation of WebView2 as part of the installation process. The offline installers (~155MB) could be included in the future if required.
+
+#### Architecture
+
+Only 64-bit Windows is supported and tested. Windows 11 only supports 64-bit and online market data reports suggest Windows 10 32-bit usage is under 1% of all Windows 10 installs.
+
+#### Earlier versions
 
 Windows 8 and earlier may work, but are not explicitly supported right now.
 
@@ -116,6 +131,6 @@ tauri_windows_installer::handle_uninstall(&"{app_title}", &"{app_id}");
   - Embed versioning into `setup.exe`
   - Check the OS version and architecture
   - Improve the required space calculation
-  - Get publisher from somwhere for uninstall registry entry
+  - Get publisher from somewhere for uninstall registry entry
 - Other
   - Setup GitHub Actions to build and release
