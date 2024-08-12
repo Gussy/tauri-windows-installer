@@ -27,6 +27,4 @@ tauri = { version = "=2.0.0-rc.1" }
 bytesize = "1.3.0"
 anyhow = "1.0.86"
 winreg = "0.52.0"
-
-# Patched dependencies
-remove_dir_all = { git = "https://github.com/caesay/remove_dir_all.git" }
+remove_dir_all_ext = "0.8.4"

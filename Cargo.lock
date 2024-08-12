@@ -1019,16 +1019,16 @@ dependencies = [
 
 [[package]]
 name = "fs_at"
-version = "0.1.10"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "982f82cc75107eef84f417ad6c53ae89bf65b561937ca4a3b3b0fd04d0aa2425"
+checksum = "14af6c9694ea25db25baa2a1788703b9e7c6648dcaeeebeb98f7561b5384c036"
 dependencies = [
  "aligned",
  "cfg-if",
  "cvt",
  "libc",
  "nix",
- "windows-sys 0.48.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2120,12 +2120,13 @@ checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 
 [[package]]
 name = "nix"
-version = "0.26.4"
+version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "598beaf3cc6fdd9a5dfb1630c2800c7acd31df7aaf0f565796fba2b53ca1af1b"
+checksum = "71e2746dc3a24dd78b3cfcb7be93368c6de9963d30f43a6a73998a9cf4b17b46"
 dependencies = [
- "bitflags 1.3.2",
+ "bitflags 2.6.0",
  "cfg-if",
+ "cfg_aliases",
  "libc",
 ]
 
@@ -2998,9 +2999,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "remove_dir_all"
-version = "0.8.2"
-source = "git+https://github.com/caesay/remove_dir_all.git#c98142b9150c53e6c5f56e752d2bf93433f2e207"
+name = "remove_dir_all_ext"
+version = "0.8.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d945becf46c0791fb22d602ae5e99bf3602a2b547b069e04b47c3719660bdd3"
 dependencies = [
  "cfg-if",
  "cvt",
@@ -3008,7 +3010,7 @@ dependencies = [
  "libc",
  "normpath",
  "same-file",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3977,7 +3979,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "15f2b5fb00ccdf689e0149d1b1b3c03fead81c2b37735d812fa8bddbbf41b6d8"
 dependencies = [
  "rand 0.4.6",
- "remove_dir_all 0.5.3",
+ "remove_dir_all",
 ]
 
 [[package]]
@@ -4353,7 +4355,7 @@ dependencies = [
  "embed-manifest",
  "fs_extra",
  "rand 0.8.5",
- "remove_dir_all 0.8.2",
+ "remove_dir_all_ext",
  "sysinfo",
  "tempdir",
  "toml 0.8.19",
@@ -4370,7 +4372,7 @@ name = "twi_uninstall"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "remove_dir_all 0.8.2",
+ "remove_dir_all_ext",
  "windows 0.58.0",
  "winreg",
 ]
