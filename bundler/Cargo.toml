@@ -3,11 +3,11 @@ name = "twi_bundler"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
+include = ["src/**/*", "Cargo.toml", "Cargo.lock", "setup.exe"]
 
 [[bin]]
 name = "bundler"
 path = "src/main.rs"
-
 
 [dependencies]
 twi_bundler_lib.workspace = true

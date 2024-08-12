@@ -2,3 +2,4 @@
 /target/
 *.exe
 .notes
+/bundler/setup.exe
