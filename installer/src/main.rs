@@ -1,22 +1,19 @@
 // Prevent additional console window on Windows in release
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod application;
 mod bundle;
 mod dialogs;
 mod process;
 mod to_wide;
-mod webview2;
 mod windows;
 
-use crate::application::Application;
-use crate::bundle::Bundle;
+use crate::bundle::{Application, WebView2};
 use crate::process::find_and_kill_processes_from_directory;
-use crate::webview2::Webview2;
 use crate::windows::{get_local_app_data, string_to_u16};
 
 use ::windows::core::PCWSTR;
 use ::windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+use bundle::Bundle;
 use bundler::extract_package;
 use dialogs::show_overwrite_repair_dialog;
 use rand::distributions::Alphanumeric;
@@ -49,7 +46,7 @@ fn main() {
     );
 
     // Handle bundled WebView2 runtime
-    let webview2 = Webview2::load(&package);
+    let webview2 = WebView2::load(&package);
     println!("Webview2 bundled: {}", webview2.bundled);
 
     // Check if WebView2 runtime is installed
@@ -127,7 +124,8 @@ fn main() {
     }
 
     println!("Preparing and cleaning installation directory...");
-    remove_dir_all::ensure_empty_dir(&root_path).expect("Failed to clean installation directory");
+    remove_dir_all_ext::ensure_empty_dir(&root_path)
+        .expect("Failed to clean installation directory");
 
     // Install the application
     let quiet = false;

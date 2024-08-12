@@ -1,4 +1,5 @@
-use crate::Bundle;
+use crate::bundle::Bundle;
+
 use anyhow::{anyhow, Result};
 use bundler::SetupPackage;
 use std::env;
@@ -6,14 +7,14 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command as Process;
 
-pub struct Webview2 {
+pub(crate) struct WebView2 {
     pub bundled: bool,
     pub exe: String,
     pub data: Option<Vec<u8>>,
     pub installed: bool,
 }
 
-impl Bundle for Webview2 {
+impl Bundle for WebView2 {
     fn load(package: &SetupPackage) -> Self {
         let data = package.get_webview2();
         let bundled = data.is_some();

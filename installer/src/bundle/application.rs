@@ -1,10 +1,11 @@
-use std::{fs, io::Write, path::PathBuf};
+use crate::bundle::Bundle;
+use crate::process::spawn_detached_process;
 
-use crate::{process::spawn_detached_process, Bundle};
 use anyhow::{Context, Result};
 use bundler::SetupPackage;
+use std::{fs, io::Write, path::PathBuf};
 
-pub struct Application {
+pub(crate) struct Application {
     pub exe: String,
     pub data: Vec<u8>,
     pub size: u64,
