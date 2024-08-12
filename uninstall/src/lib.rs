@@ -40,7 +40,7 @@ fn uninstall(app_title: &str, app_id: &str) {
         .parent()
         .expect("Failed to get parent directory")
         .to_path_buf();
-    if let Err(e) = remove_dir_all::remove_dir_but_not_self(&root_path) {
+    if let Err(e) = remove_dir_all_ext::remove_dir_but_not_self(&root_path) {
         eprintln!("Failed to remove installation directory: {}", e);
         errors = true;
     }
@@ -53,14 +53,14 @@ fn uninstall(app_title: &str, app_id: &str) {
 
     // Show the result
     if !errors {
-        println!("Uninstallation completed successfully!");
+        println!("Uninstall completed successfully!");
         show_info(
             format!("{} Uninstall", app_title).as_str(),
             None,
             "The application was successfully uninstalled.",
         );
     } else {
-        eprintln!("Uninstallation completed with errors.");
+        eprintln!("Uninstall completed with errors.");
         show_uninstall_complete_with_errors()
     }
 
@@ -93,7 +93,7 @@ fn show_info(title: &str, parent: Option<HWND>, text: &str) {
 }
 
 fn show_uninstall_complete_with_errors() {
-    let lp_title = "Uninstallation Complete".to_wide_null();
+    let lp_title = "Uninstall Complete".to_wide_null();
     let lp_text = "The application was uninstalled, but there were errors during the process. Please check the logs for more information.".to_wide_null();
 
     unsafe {
@@ -127,4 +127,25 @@ fn register_intent_to_delete_self(delay_seconds: usize, current_directory: &Path
     let _ = unsafe { AllowSetForegroundWindow(child.id()) };
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env;
+    use std::fs;
+
+    #[test]
+    fn test_register_intent_to_delete_self() {
+        // Mock the current directory and executable path
+        let temp_dir = env::temp_dir();
+        let current_exe = temp_dir.join("test_exe.exe");
+        fs::File::create(&current_exe).unwrap();
+
+        let result = register_intent_to_delete_self(3, &temp_dir);
+        assert!(result.is_ok());
+
+        // Check that the function executes without panicking
+        assert!(true);
+    }
 }

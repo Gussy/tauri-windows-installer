@@ -1,7 +1,7 @@
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 
-pub trait ToWide {
+pub(crate) trait ToWide {
     fn _to_wide(&self) -> Vec<u16>;
     fn to_wide_null(&self) -> Vec<u16>;
 }
