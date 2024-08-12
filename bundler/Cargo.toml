@@ -1,5 +1,5 @@
 [package]
-name = "bundler-app"
+name = "twi_bundler"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -10,7 +10,7 @@ path = "src/main.rs"
 
 
 [dependencies]
-bundler.workspace = true
+twi_bundler_lib.workspace = true
 bytesize.workspace = true
 clap = { version = "4.5.13", features = ["derive"] }
 colored = "2.1.0"

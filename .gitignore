@@ -1,3 +1,4 @@
 .hermit
 /target/
 *.exe
+.notes

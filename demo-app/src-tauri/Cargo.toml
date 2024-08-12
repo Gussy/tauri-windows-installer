@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 description = "A Tauri App"
+publish = false
 
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -16,7 +17,7 @@ crate-type = ["lib", "cdylib", "staticlib"]
 tauri-build = { version = "2.0.0-rc", features = [] }
 
 [dependencies]
-tauri-windows-installer.workspace = true
+twi_uninstall.workspace = true
 tauri = { version = "2.0.0-rc", features = [] }
 tauri-plugin-shell = "2.0.0-rc"
 serde = { version = "1", features = ["derive"] }
