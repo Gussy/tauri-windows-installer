@@ -2,7 +2,7 @@
 
 An [MVP](https://en.wikipedia.org/wiki/Minimum_viable_product) for a simple and modern "one click" windows installer for [Tauri apps](https://tauri.app/).
 
-This work is heavily inspired by [VeloPack](https://github.com/velopack/velopack) and uses many of the same concepts, however unlike VeloPack this work only handles the installation and uninstallation of Tauri applications, only on Windows, and has no support for any update mechanisims.
+This work is heavily inspired by [VeloPack](https://github.com/velopack/velopack) and uses many of the same concepts, however unlike VeloPack this work only handles the install and uninstall of Tauri applications, only on Windows, and has no support for any update mechanisms.
 
 ## Goals
 
@@ -102,7 +102,7 @@ The installer crate builds both a skeleton setup application (`setup.exe`) along
 1. The installation directory is emptied
 1. The application is installed. This copies the application to the installation directory and spawns it as a detached process
 1. If the previous step failed **and** an existing installation is being overwritten, a rollback occurs by renaming the temporary installation back to it's original name. The setup process then exits
-1. An uninstallation entry is written to the the `HKEY_CURRENT_USER` registry, using `{productName}.exe --uninstall` as the uninstallation command
+1. An uninstall entry is written to the the `HKEY_CURRENT_USER` registry, using `{productName}.exe --uninstall` as the uninstall command
 
 ### Uninstaller
 
@@ -112,7 +112,7 @@ The uninstaller is built into the main Tauri application, by calling a function 
 tauri_windows_installer::handle_uninstall(&"{app_title}", &"{app_id}");
 ```
 
-#### Uninstallation overview
+#### Uninstall overview
 
 1. Kill all running application processes
 1. Remove the installation directory (except for the application executable)
