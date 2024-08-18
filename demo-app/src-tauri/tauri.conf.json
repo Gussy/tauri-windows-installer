@@ -37,7 +37,7 @@
       "webview2": {
         "bundle": "evergreen"
       },
-      "icon": "icons/icon.ico"
+      "icon": "icons/128x128@2x.png"
     }
   }
 }

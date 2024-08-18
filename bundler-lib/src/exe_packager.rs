@@ -130,6 +130,9 @@ impl ExePackager {
         output_file
             .write_all(metadata_offset_str.as_bytes())
             .expect("Failed to write metadata offset");
+
+        // Close the output file
+        output_file.flush().expect("Failed to flush output file");
     }
 }
 

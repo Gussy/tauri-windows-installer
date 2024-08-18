@@ -14,3 +14,4 @@ twi_bundler_lib.workspace = true
 bytesize.workspace = true
 clap = { version = "4.5.13", features = ["derive"] }
 colored = "2.1.0"
+editpe = "0.1.0"
