@@ -60,6 +60,7 @@ jobs:
       - name: Build rust libraries
         run: |
           cargo build --release
+          cp .\target\release\setup.exe .\bundler\
 
       - name: Install bundler
         run: |
@@ -72,7 +73,7 @@ jobs:
 
       - name: Package the application installer
         run: |
-          bundler.exe --tauri-conf '.\demo-app\src-tauri\tauri.conf.json' --app '.\target\release\demo-app.exe'
+          bundler.exe --tauri-conf '.\demo-app\src-tauri\tauri.conf.json' --app '.\target\release\demo-app.exe' --title 'Demo App'
 
       - name: Upload build artifacts
         if: success() && github.ref == 'refs/heads/main'
