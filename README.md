@@ -122,15 +122,15 @@ tauri_windows_installer::handle_uninstall(&"{app_title}", &"{app_id}");
 
 ## TODO
 
-- Bundler
-  - Add `-s, --setup-version` arguments to print the currently built-in `setup.exe` version
-  - Add an icon to the packaged `{productName}-setup.exe`
-  - Add other resource information like name, version, date etc to the `{productName}-setup.exe`
-  - Get a human friendly application title from somewhere (cli argument?)
-- Installer
-  - Embed versioning into `setup.exe`
-  - Check the OS version and architecture
-  - Improve the required space calculation
-  - Get publisher from somewhere for uninstall registry entry
-- Other
-  - Setup GitHub Actions to build and release
+- [ ] Bundler
+  - [ ] Add `-s, --setup-version` arguments to print the currently built-in `setup.exe` version
+  - [ ] Add an icon to the packaged `{productName}-setup.exe`
+  - [ ] Add other resource information like name, version, date etc to the `{productName}-setup.exe`
+  - [ ] Get a human friendly application title from somewhere (cli argument?)
+- [ ] Installer
+  - [ ] Embed versioning into `setup.exe`
+  - [ ] Check the OS version and architecture
+  - [ ] Improve the required space calculation
+  - [ ] Get publisher from somewhere for uninstall registry entry
+- [x] Other
+  - [x] Setup GitHub Actions to build and release
