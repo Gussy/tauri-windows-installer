@@ -7,15 +7,13 @@ mod process;
 mod to_wide;
 mod windows;
 
+use crate::bundle::Bundle;
 use crate::bundle::{Application, WebView2};
+use crate::dialogs::{show_error_dialog, show_overwrite_repair_dialog};
 use crate::process::find_and_kill_processes_from_directory;
-use crate::windows::{get_local_app_data, string_to_u16};
+use crate::windows::{get_free_space, get_local_app_data};
 
-use ::windows::core::PCWSTR;
-use ::windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
-use bundle::Bundle;
 use bundler::extract_package;
-use dialogs::show_overwrite_repair_dialog;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use std::path::{Path, PathBuf};
@@ -71,35 +69,39 @@ fn main() {
 
     // Check if there is enough space to install the application
     let required_space = app.size as u64;
-    println!("Required disk space: {}", required_space);
+    println!("Required disk space: {}", format_bytes(required_space));
 
-    let mut free_space: u64 = 0;
-    let root_pcwstr = string_to_u16(root_path_str);
-    let root_pcwstr: PCWSTR = PCWSTR(root_pcwstr.as_ptr());
-    if let Ok(()) = unsafe { GetDiskFreeSpaceExW(root_pcwstr, None, None, Some(&mut free_space)) } {
-        if free_space < required_space {
-            panic!(
-                "{} requires at least {} disk space to be installed. There is only {} available.",
-                manifest.identifier,
-                format_bytes(required_space),
-                format_bytes(free_space)
-            );
+    // Check if there is enough space to install the application
+    match get_free_space(root_path_str) {
+        Ok(free_space) => {
+            if free_space < required_space {
+                show_error_dialog(
+                    "Not enough disk space",
+                    &format!(
+                        "{} requires at least {} disk space to be installed. There is only {} available.",
+                        manifest.title,
+                        format_bytes(required_space),
+                        format_bytes(free_space)
+                    ),
+                );
+                return;
+            } else {
+                println!(
+                    "There is {} free space available at destination, this package requires {}.",
+                    format_bytes(free_space),
+                    format_bytes(required_space)
+                );
+            }
         }
+        Err(e) => eprintln!("Error: {}", e),
     }
-
-    println!(
-        "There is {} free space available at destination, this package requires {}.",
-        format_bytes(free_space),
-        format_bytes(required_space)
-    );
-
-    // TODO: Check if the application supports this OS version and architecture
 
     let mut root_path_renamed = String::new();
 
     // Check if the application is already installed
     if !is_directory_empty(&root_path).unwrap() {
-        let result = show_overwrite_repair_dialog(&manifest.name, &manifest.version, false);
+        let result =
+            show_overwrite_repair_dialog(&manifest.title, &manifest.name, &manifest.version, false);
 
         if !result {
             println!("User cancelled installation");

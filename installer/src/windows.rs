@@ -1,10 +1,12 @@
 use std::path::PathBuf;
 
-use anyhow::Result;
+use ::windows::core::PCWSTR;
+use anyhow::{anyhow, Result};
 use bundler::SetupManifest;
 use chrono::prelude::*;
 use windows::{
     core::{GUID, PWSTR},
+    Win32::Storage::FileSystem::GetDiskFreeSpaceExW,
     Win32::UI::Shell::{FOLDERID_LocalAppData, SHGetKnownFolderPath},
 };
 use winreg::enums::*;
@@ -33,7 +35,7 @@ fn pwstr_to_string(input: PWSTR) -> Result<String> {
     }
 }
 
-pub fn string_to_u16<P: AsRef<str>>(input: P) -> Vec<u16> {
+fn string_to_u16<P: AsRef<str>>(input: P) -> Vec<u16> {
     let input = input.as_ref();
     input.encode_utf16().chain(Some(0)).collect::<Vec<u16>>()
 }
@@ -71,4 +73,22 @@ pub fn write_uninstall_entry(manifest: &SetupManifest, root_path: &PathBuf) -> R
     app_key.set_value("Language", &0x0409u32)?;
 
     Ok(())
+}
+
+/// Gets the free disk space for the provided path.
+pub fn get_free_space(root_path_str: &str) -> Result<u64> {
+    let mut free_space: u64 = 0;
+    let root_pcwstr = string_to_u16(root_path_str);
+    let root_pcwstr: PCWSTR = PCWSTR(root_pcwstr.as_ptr());
+
+    let result = unsafe { GetDiskFreeSpaceExW(root_pcwstr, None, None, Some(&mut free_space)) };
+
+    if result.is_err() {
+        return Err(anyhow!(
+            "Failed to retrieve free disk space for path: {}",
+            root_path_str
+        ));
+    }
+
+    Ok(free_space)
 }
