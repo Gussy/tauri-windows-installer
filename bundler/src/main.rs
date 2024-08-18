@@ -35,7 +35,39 @@ fn main() {
     let (tauri_conf, plugin_config) = load_tauri_config(&args.tauri_conf);
 
     // Load the setup.exe file
-    let setup_data = load_embedded_setup();
+    let mut setup_data = load_embedded_setup();
+
+    // Add an icon to the output executable
+    let mut image = Image::parse(&setup_data).expect("Failed to parse exe data");
+    let mut resources = image.resource_directory().cloned().unwrap_or_default();
+
+    // Use the icon specified in the plugin config, or the first png icon in the bundle config
+    let icon = plugin_config.icon.or_else(|| {
+        tauri_conf
+            .bundle
+            .icon
+            .iter()
+            .find(|i| i.ends_with(".png"))
+            .cloned()
+    });
+    if let Some(icon) = icon {
+        let icon_path = Path::new(&args.tauri_conf).parent().unwrap().join(icon);
+        let icon_data = std::fs::read(&icon_path).expect("Failed to read icon data");
+        resources.set_icon(&icon_data).expect("Failed to set icon");
+        println!(
+            "  Added icon: {}",
+            &icon_path.file_name().unwrap().to_str().unwrap()
+        );
+    } else {
+        println!("  No icon specified, skipping icon addition");
+    }
+
+    // Update the resource directory in the executable
+    image
+        .set_resource_directory(resources)
+        .expect("Failed to set resource directory");
+    setup_data = image.data().into();
+    println!("  Added resources to the setup file");
 
     // Create the packager
     let mut packager = ExePackager::new(setup_data);
@@ -83,40 +115,6 @@ fn main() {
     // Package the executable with the added files and manifest
     let output_filename = format!("{}-setup.exe", manifest.name);
     packager.package(Path::new(&output_filename));
-
-    // Add an icon to the output executable
-    let data = std::fs::read(&output_filename).expect("Failed to read exe data");
-    let mut image = Image::parse(&data).expect("Failed to parse exe data");
-    let mut resources = image.resource_directory().cloned().unwrap_or_default();
-
-    // Use the icon specified in the plugin config, or the first png icon in the bundle config
-    let icon = plugin_config.icon.or_else(|| {
-        tauri_conf
-            .bundle
-            .icon
-            .iter()
-            .find(|i| i.ends_with(".png"))
-            .cloned()
-    });
-    if let Some(icon) = icon {
-        let icon_path = Path::new(&args.tauri_conf).parent().unwrap().join(icon);
-        let icon_data = std::fs::read(&icon_path).expect("Failed to read icon data");
-        resources.set_icon(&icon_data).expect("Failed to set icon");
-        println!(
-            "  Added icon: {}",
-            &icon_path.file_name().unwrap().to_str().unwrap()
-        );
-    } else {
-        println!("  No icon specified, skipping icon addition");
-    }
-
-    // Update the resource directory in the executable
-    image
-        .set_resource_directory(resources)
-        .expect("Failed to set resource directory");
-    let target = image.data();
-    std::fs::write(&output_filename, target).expect("Failed to write output file");
-    println!("  Added resources to output executable");
 
     // Print the output filename and size
     let output_size = std::fs::metadata(&output_filename)
