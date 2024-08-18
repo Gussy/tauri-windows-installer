@@ -34,7 +34,11 @@ fn main() {
             panic!("{}", SETUP_MISSING_ERR);
         }
 
+        if setup_dest_path.exists() {
+            fs::remove_file(&setup_dest_path).expect("Failed to remove existing setup.exe");
+        }
         fs::copy(&setup_source_path, &setup_dest_path).expect("Failed to copy setup.exe");
+        println!("cargo:rerun-if-changed={}", setup_dest_path.display());
     }
 
     // Ensure the setup.exe is present in the manifest directory

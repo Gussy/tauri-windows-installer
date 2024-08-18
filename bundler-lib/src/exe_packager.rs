@@ -22,6 +22,7 @@ use std::path::Path;
 ///
 ///     let manifest = SetupManifest {
 ///         name: "MyApp".to_string(),
+///         title: "My App".to_string(),
 ///         version: "1.0.0".to_string(),
 ///         identifier: "com.example.myapp".to_string(),
 ///         application: "myapp.exe".to_string(),
@@ -41,6 +42,7 @@ pub struct ExePackager {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct SetupManifest {
     pub name: String,
+    pub title: String,
     pub version: String,
     pub identifier: String,
     pub application: String,
@@ -153,6 +155,7 @@ mod tests {
 
         let manifest = SetupManifest {
             name: "TestApp".to_string(),
+            title: "Test App".to_string(),
             version: "1.0.0".to_string(),
             identifier: "com.example.testapp".to_string(),
             application: "test.exe".to_string(),
@@ -173,6 +176,7 @@ mod tests {
 
         let manifest = SetupManifest {
             name: "TestApp".to_string(),
+            title: "Test App".to_string(),
             version: "1.0.0".to_string(),
             identifier: "com.example.testapp".to_string(),
             application: "test.exe".to_string(),

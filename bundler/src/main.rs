@@ -19,6 +19,10 @@ struct Args {
     /// Path to application to bundle
     #[arg(short, long)]
     app: String,
+
+    /// Title of the bundled application
+    #[arg(short, long)]
+    title: String,
 }
 
 fn main() {
@@ -36,7 +40,6 @@ fn main() {
     let mut packager = ExePackager::new(setup_data);
 
     // Handle the webview2 bundling
-    // let webview_data: Vec<u8>;
     match &plugin_config.webview2.bundle {
         Some(Webview2Bundle::Evergreen) => {
             println!(
@@ -69,6 +72,7 @@ fn main() {
     // Create and add a manifest
     let manifest = SetupManifest {
         name: tauri_conf.product_name.clone().unwrap_or("".to_owned()),
+        title: args.title,
         version: tauri_conf.version.clone().unwrap_or("0.0.0".to_owned()),
         identifier: tauri_conf.identifier.clone(),
         application: app_exe.to_owned(),
@@ -101,25 +105,3 @@ fn load_embedded_setup() -> Vec<u8> {
 
     setup_data
 }
-
-// fn load_executable_from_output_dir(filename: &str) -> Vec<u8> {
-//     let out_dir = env::var("OUT_DIR").expect("OUT_DIR environment variable not set");
-//     let executable_path = PathBuf::from(&out_dir).join(filename);
-//     let mut executable_data = Vec::new();
-//     let mut executable_file =
-//         File::open(&executable_path).expect("Failed to open setup executable");
-//     executable_file
-//         .read_to_end(&mut executable_data)
-//         .expect("Failed to read setup executable");
-//     println!(
-//         "  Loaded setup executable: {} ({} bytes)",
-//         executable_path
-//             .file_name()
-//             .expect("Failed to get filename")
-//             .to_str()
-//             .expect("Failed to convert filename to string"),
-//         ByteSize(executable_data.len().try_into().unwrap())
-//     );
-
-//     executable_data
-// }

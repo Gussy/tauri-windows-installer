@@ -48,7 +48,6 @@ pub fn extract_package(exe_path: &Path) -> SetupPackage {
     file.read_exact(&mut metadata_buf)
         .expect("Failed to read metadata");
 
-    println!("{:?}", metadata_buf);
     let metadata: Vec<MetadataEntry> =
         serde_json::from_slice(&metadata_buf).expect("Failed to deserialize metadata");
 
@@ -115,6 +114,7 @@ mod tests {
 
         let manifest = SetupManifest {
             name: "TestApp".to_string(),
+            title: "Test App".to_string(),
             version: "1.0.0".to_string(),
             identifier: "com.example.testapp".to_string(),
             application: "test.exe".to_string(),

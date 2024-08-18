@@ -23,7 +23,7 @@ twi_installer = { path = "installer" }
 twi_uninstall = { path = "uninstall" }
 
 # External dependencies
-tauri = { version = "=2.0.0-rc.1" }
+tauri = { version = "=2.0.0-rc.3" }
 bytesize = "1.3.0"
 anyhow = "1.0.86"
 winreg = "0.52.0"

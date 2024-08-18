@@ -39,16 +39,18 @@ Windows 8 and earlier may work, but are not explicitly supported right now.
 
 ```ps
 # Build all libraries and setup.exe
-cargo build
+cargo build --release
+cp .\target\release\setup.exe .\bundler\
 
 # Install the bundler application
+cargo build --package twi_bundler --release
 cargo install --path bundler
 
 # Build the demo Tauri app
 cd .\demo-app\; pnpm tauri build; cd ..\
 
 # Bundle the demo app into an installer
-bundler.exe --tauri-conf '.\demo-app\src-tauri\tauri.conf.json' --app '.\target\release\demo-app.exe'
+bundler.exe --tauri-conf '.\demo-app\src-tauri\tauri.conf.json' --app '.\target\release\demo-app.exe' --title 'Demo App'
 ```
 
 The output from the bundler should look similar to this:
@@ -77,6 +79,7 @@ Usage: bundler.exe --tauri-conf <TAURI_CONF> --app <APP>
 Options:
   -t, --tauri-conf <TAURI_CONF>  Path to the Tauri configuration file
   -a, --app <APP>                Path to application to bundle
+  -t, --title <TITLE>            Title of the bundled application
   -h, --help                     Print help
   -V, --version                  Print version
 ```
@@ -123,10 +126,10 @@ tauri_windows_installer::handle_uninstall(&"{app_title}", &"{app_id}");
 ## TODO
 
 - [ ] Bundler
-  - [ ] Add `-s, --setup-version` arguments to print the currently built-in `setup.exe` version
+  - [ ] ~~Add `-s, --setup-version` arguments to print the currently built-in `setup.exe` version~~
   - [ ] Add an icon to the packaged `{productName}-setup.exe`
   - [ ] Add other resource information like name, version, date etc to the `{productName}-setup.exe`
-  - [ ] Get a human friendly application title from somewhere (cli argument?)
+  - [x] Get a human friendly application title from somewhere (cli argument?)
 - [ ] Installer
   - [ ] Embed versioning into `setup.exe`
   - [ ] Check the OS version and architecture
