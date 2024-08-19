@@ -12,6 +12,16 @@ path = "src/main.rs"
 [dependencies]
 twi_bundler_lib.workspace = true
 bytesize.workspace = true
+libsui.workspace = true
+serde.workspace = true
+tauri.workspace = true
 clap = { version = "4.5.13", features = ["derive"] }
 colored = "2.1.0"
 editpe = "0.1.0"
+serde_json = "1.0.122"
+reqwest = { version = "0.12.5", features = ["blocking"] }
+dirs-next = "2.0.0"
+
+[dev-dependencies]
+mockito = "1.5.0"
+tempfile = "3.12.0"

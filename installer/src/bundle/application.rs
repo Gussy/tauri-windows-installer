@@ -2,7 +2,7 @@ use crate::bundle::Bundle;
 use crate::process::spawn_detached_process;
 
 use anyhow::{Context, Result};
-use bundler::SetupPackage;
+use bundler::{get_application_data, get_manifest};
 use std::{fs, io::Write, path::PathBuf};
 
 pub(crate) struct Application {
@@ -12,11 +12,12 @@ pub(crate) struct Application {
 }
 
 impl Bundle for Application {
-    fn load(package: &SetupPackage) -> Self {
-        let data = package.get_application();
+    fn load() -> Self {
+        let data = get_application_data();
+        let manifest = get_manifest();
 
         Self {
-            exe: package.manifest.application.clone(),
+            exe: manifest.application.clone(),
             data: data.clone(),
             size: data.clone().len() as u64,
         }

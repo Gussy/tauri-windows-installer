@@ -13,38 +13,26 @@ use crate::dialogs::{show_error_dialog, show_overwrite_repair_dialog};
 use crate::process::find_and_kill_processes_from_directory;
 use crate::windows::{get_free_space, get_local_app_data};
 
-use bundler::extract_package;
+use bundler::get_manifest;
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use std::path::{Path, PathBuf};
 use std::{fs, io};
 
 fn main() {
-    // Get name of the currently running bniary at runtime
-    let binary_name = PathBuf::from(
-        std::env::current_exe()
-            .unwrap()
-            .file_name()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .to_string(),
-    );
-
     // Extract packages
-    let package = extract_package(&binary_name);
-    let manifest = &package.manifest;
+    let manifest = get_manifest();
     println!("Application: {}", manifest.name);
 
     // Handle bundled application
-    let app = Application::load(&package);
+    let app = Application::load();
     println!(
         "Application size: {}",
         format_bytes(app.data.len().try_into().unwrap())
     );
 
     // Handle bundled WebView2 runtime
-    let webview2 = WebView2::load(&package);
+    let webview2 = WebView2::load();
     println!("Webview2 bundled: {}", webview2.bundled);
 
     // Check if WebView2 runtime is installed

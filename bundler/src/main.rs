@@ -1,12 +1,17 @@
+pub mod plugin_config;
+pub mod webview2;
+
+use crate::plugin_config::{load_tauri_config, Webview2Bundle};
+use crate::webview2::{download_webview2_evergreen, WEBVIEW2_EVERGREEN_EXE};
+
 use bundler::{
-    exe_packager::{ExePackager, SetupManifest},
-    plugin_config::{load_tauri_config, Webview2Bundle},
-    webview2::{download_webview2_evergreen, WEBVIEW2_EVERGREEN_EXE},
+    manifest::SetupManifest, APPLICATION_RESOURCE, MANIFEST_RESOURCE, WEBVIEW_RESOURCE,
+    WEBVIEW_RESOURCE_FILENAME,
 };
 use bytesize::ByteSize;
 use clap::Parser;
 use colored::*;
-use editpe::Image;
+use libsui::PortableExecutable;
 use std::{env, path::Path};
 
 /// Tauri Windows Installer Bundler
@@ -35,11 +40,10 @@ fn main() {
     let (tauri_conf, plugin_config) = load_tauri_config(&args.tauri_conf);
 
     // Load the setup.exe file
-    let mut setup_data = load_embedded_setup();
+    let setup_data = load_embedded_setup();
 
-    // Add an icon to the output executable
-    let mut image = Image::parse(&setup_data).expect("Failed to parse exe data");
-    let mut resources = image.resource_directory().cloned().unwrap_or_default();
+    // Create the portable executable
+    let mut setup_pe = PortableExecutable::from(&setup_data).expect("Failed to create PE");
 
     // Use the icon specified in the plugin config, or the first png icon in the bundle config
     let icon = plugin_config.icon.or_else(|| {
@@ -53,7 +57,7 @@ fn main() {
     if let Some(icon) = icon {
         let icon_path = Path::new(&args.tauri_conf).parent().unwrap().join(icon);
         let icon_data = std::fs::read(&icon_path).expect("Failed to read icon data");
-        resources.set_icon(&icon_data).expect("Failed to set icon");
+        setup_pe = setup_pe.set_icon(&icon_data).expect("Failed to set icon");
         println!(
             "  Added icon: {}",
             &icon_path.file_name().unwrap().to_str().unwrap()
@@ -61,16 +65,6 @@ fn main() {
     } else {
         println!("  No icon specified, skipping icon addition");
     }
-
-    // Update the resource directory in the executable
-    image
-        .set_resource_directory(resources)
-        .expect("Failed to set resource directory");
-    setup_data = image.data().into();
-    println!("  Added resources to the setup file");
-
-    // Create the packager
-    let mut packager = ExePackager::new(setup_data);
 
     // Handle the webview2 bundling
     match &plugin_config.webview2.bundle {
@@ -81,7 +75,15 @@ fn main() {
             );
 
             let webview_data = download_webview2_evergreen();
-            packager.add_file(WEBVIEW2_EVERGREEN_EXE, webview_data.to_vec());
+            setup_pe = setup_pe
+                .write_resource(WEBVIEW_RESOURCE, webview_data.to_vec())
+                .expect("Failed to write webview2 resource");
+            setup_pe = setup_pe
+                .write_resource(
+                    WEBVIEW_RESOURCE_FILENAME,
+                    WEBVIEW2_EVERGREEN_EXE.as_bytes().to_vec(),
+                )
+                .expect("Failed to write webview2 filename resource");
         }
         None => {
             println!("  {}", "No webview2 bundle specified".blue());
@@ -95,7 +97,9 @@ fn main() {
         .len()
         .try_into()
         .expect("Failed to convert app data length");
-    packager.add_file(app_exe, app_data);
+    setup_pe = setup_pe
+        .write_resource(APPLICATION_RESOURCE, app_data)
+        .expect("Failed to write application resource");
     println!(
         "  Loaded application executable: {} ({} bytes)",
         app_exe,
@@ -110,11 +114,18 @@ fn main() {
         identifier: tauri_conf.identifier.clone(),
         application: app_exe.to_owned(),
     };
-    packager.add_manifest(&manifest);
+    let manifest_data = manifest.to_binary().expect("Failed to serialize manifest");
+    setup_pe = setup_pe
+        .write_resource(MANIFEST_RESOURCE, manifest_data)
+        .expect("Failed to write manifest resource");
 
     // Package the executable with the added files and manifest
     let output_filename = format!("{}-setup.exe", manifest.name);
-    packager.package(Path::new(&output_filename));
+    let mut output_file =
+        std::fs::File::create(&output_filename).expect("Failed to create output file");
+    setup_pe
+        .build(&mut output_file)
+        .expect("Failed to build setup executable");
 
     // Print the output filename and size
     let output_size = std::fs::metadata(&output_filename)

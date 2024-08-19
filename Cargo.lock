@@ -202,6 +202,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
+name = "bincode"
+version = "1.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1f45e9417d87227c7a56d22e471c6206462cba514c7590c09aff4cf6d1ddcad"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "bitflags"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2002,6 +2011,19 @@ checksum = "c0ff37bd590ca25063e35af745c343cb7a0271906fb7b37e4813e8f79f00268d"
 dependencies = [
  "bitflags 2.6.0",
  "libc",
+]
+
+[[package]]
+name = "libsui"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2d0f34a58599483cd44a31ff3622dbcca0c50679af60f98b705069dc729e70cf"
+dependencies = [
+ "editpe",
+ "libc",
+ "sha2",
+ "windows-sys 0.48.0",
+ "zerocopy",
 ]
 
 [[package]]
@@ -4467,7 +4489,15 @@ dependencies = [
  "bytesize",
  "clap",
  "colored",
+ "dirs-next",
  "editpe",
+ "libsui",
+ "mockito",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tempfile",
  "twi_bundler_lib",
 ]
 
@@ -4475,14 +4505,11 @@ dependencies = [
 name = "twi_bundler_lib"
 version = "0.1.0"
 dependencies = [
+ "bincode",
  "bytesize",
- "dirs-next",
- "mockito",
- "reqwest",
+ "libsui",
  "serde",
- "serde_json",
  "tauri",
- "tempfile",
 ]
 
 [[package]]
