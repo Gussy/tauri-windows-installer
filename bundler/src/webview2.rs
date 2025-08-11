@@ -1,3 +1,4 @@
+use anyhow::Result;
 use bytesize::ByteSize;
 use dirs_next::cache_dir;
 use reqwest::blocking::get;
@@ -9,18 +10,23 @@ const WEBVIEW2_EVERGREEN_URL: &str = "https://go.microsoft.com/fwlink/p/?LinkId=
 pub const WEBVIEW2_EVERGREEN_EXE: &str = "MicrosoftEdgeWebview2Setup.exe";
 
 /// Download the WebView2 evergreen bootstrapper
-pub fn download_webview2_evergreen() -> Vec<u8> {
+pub fn download_webview2_evergreen() -> Result<Vec<u8>> {
     download_webview2_evergreen_impl(WEBVIEW2_EVERGREEN_URL)
 }
 
-/// Download the WebView2 evergreen bootstrapper
-pub fn download_webview2_evergreen_impl(url: &str) -> Vec<u8> {
+/// Download the WebView2 evergreen bootstrapper from the provided URL
+pub fn download_webview2_evergreen_impl(url: &str) -> Result<Vec<u8>> {
     // Get the cache directory
     let cache_dir = std::env::var("CACHE_DIR")
         .ok()
         .map(PathBuf::from)
         .or_else(|| cache_dir().map(|d| d.join("webview2")))
-        .expect("Failed to get cache directory");
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "Failed to get cache directory",
+            )
+        })?;
 
     let webview2_path = cache_dir.join(WEBVIEW2_EVERGREEN_EXE);
 
@@ -28,24 +34,24 @@ pub fn download_webview2_evergreen_impl(url: &str) -> Vec<u8> {
 
     if !webview2_path.exists() {
         // Ensure the cache directory exists
-        fs::create_dir_all(&cache_dir).expect("Failed to create cache directory");
+        fs::create_dir_all(&cache_dir)?;
 
         // Download the file
-        let response = get(url).expect("Failed to download file");
-        let mut file = fs::File::create(&webview2_path).expect("Failed to create file");
-        let bytes = response.bytes().expect("Failed to read response bytes");
-        file.write_all(&bytes).expect("Failed to write to file");
+        let response = get(url)?;
+        let mut file = fs::File::create(&webview2_path)?;
+        let bytes = response.bytes()?;
+        file.write_all(&bytes)?;
     }
 
     // Read the cached or newly downloaded file
-    let webview2_data = fs::read(&webview2_path).expect("Failed to read file");
+    let webview2_data = fs::read(&webview2_path)?;
     println!(
         "  Loaded WebView2 Evergreen: {} ({} bytes)",
         WEBVIEW2_EVERGREEN_EXE,
         ByteSize(webview2_data.len().try_into().unwrap())
     );
 
-    webview2_data
+    Ok(webview2_data)
 }
 
 #[cfg(test)]
@@ -79,7 +85,7 @@ mod tests {
         std::env::set_var("CACHE_DIR", cache_dir.path());
 
         let result = std::panic::catch_unwind(|| {
-            let bytes = download_webview2_evergreen_impl(&mock_url);
+            let bytes = download_webview2_evergreen_impl(&mock_url).expect("Failed to download");
             assert_eq!(bytes, b"mock webview2 installer");
         });
 
@@ -122,7 +128,7 @@ mod tests {
         std::env::set_var("MOCK_WEBVIEW2_URL", &mock_url);
         std::env::set_var("CACHE_DIR", cache_dir.path());
 
-        let bytes = download_webview2_evergreen_impl(&mock_url);
+        let bytes = download_webview2_evergreen_impl(&mock_url).expect("Failed to download");
         assert_eq!(bytes, b"mock cached installer");
 
         // Verify that the mock was not called

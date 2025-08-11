@@ -13,13 +13,27 @@ use crate::dialogs::{show_error_dialog, show_overwrite_repair_dialog};
 use crate::process::find_and_kill_processes_from_directory;
 use crate::windows::{get_free_space, get_local_app_data};
 
-use bundler::get_manifest;
+use bundler::{get_manifest, is_bundled};
 use rand::distributions::Alphanumeric;
 use rand::{thread_rng, Rng};
 use std::path::{Path, PathBuf};
 use std::{fs, io};
 
 fn main() {
+    if let Err(e) = run_installer() {
+        show_error_dialog("Installation Error", &e);
+    }
+}
+
+fn run_installer() -> Result<(), String> {
+    // Check if the executable has been packed with the required resources
+    if !is_bundled() {
+        return Err(
+            "The executable is missing the required resources to install the application."
+                .to_string(),
+        );
+    }
+
     // Extract packages
     let manifest = get_manifest();
     println!("Application: {}", manifest.name);
@@ -42,17 +56,21 @@ fn main() {
         println!("Installing webview2 runtime...");
         webview2
             .install(false, &PathBuf::new())
-            .expect("Failed to install webview2 runtime");
+            .map_err(|e| format!("Failed to install webview2 runtime: {}", e))?;
     }
 
     // Determine the installation directory
     println!("Determining install directory...");
-    let appdata = get_local_app_data().expect("Failed to get local app data path");
+    let appdata =
+        get_local_app_data().map_err(|e| format!("Failed to get local app data path: {}", e))?;
     let root_path = Path::new(&appdata).join(&manifest.identifier);
     if !root_path.exists() {
-        fs::create_dir_all(&root_path).expect("Failed to create installation directory");
+        fs::create_dir_all(&root_path)
+            .map_err(|e| format!("Failed to create installation directory: {}", e))?;
     }
-    let root_path_str = root_path.to_str().unwrap();
+    let root_path_str = root_path
+        .to_str()
+        .ok_or_else(|| "Failed to convert installation directory path to string.".to_string())?;
     println!("Installation Directory: {:?}", root_path_str);
 
     // Check if there is enough space to install the application
@@ -63,16 +81,12 @@ fn main() {
     match get_free_space(root_path_str) {
         Ok(free_space) => {
             if free_space < required_space {
-                show_error_dialog(
-                    "Not enough disk space",
-                    &format!(
-                        "{} requires at least {} disk space to be installed. There is only {} available.",
-                        manifest.title,
-                        format_bytes(required_space),
-                        format_bytes(free_space)
-                    ),
-                );
-                return;
+                return Err(format!(
+                    "{} requires at least {} disk space to be installed. There is only {} available.",
+                    manifest.title,
+                    format_bytes(required_space),
+                    format_bytes(free_space)
+                ));
             } else {
                 println!(
                     "There is {} free space available at destination, this package requires {}.",
@@ -81,27 +95,27 @@ fn main() {
                 );
             }
         }
-        Err(e) => eprintln!("Error: {}", e),
+        Err(e) => return Err(format!("Failed to get free disk space: {}", e)),
     }
 
     let mut root_path_renamed = String::new();
 
     // Check if the application is already installed
-    if !is_directory_empty(&root_path).unwrap() {
+    if !is_directory_empty(&root_path)
+        .map_err(|e| format!("Failed to check if directory is empty: {}", e))?
+    {
         let result =
             show_overwrite_repair_dialog(&manifest.title, &manifest.name, &manifest.version, false);
 
         if !result {
             println!("User cancelled installation");
-            return;
+            return Ok(());
         }
         println!("User chose to overwrite existing installation.");
 
         // Force stop the application if it is running
-        match find_and_kill_processes_from_directory(root_path_str) {
-            Ok(_) => println!("All processes from {} have been terminated.", root_path_str),
-            Err(e) => eprintln!("Failed to terminate processes: {}", e),
-        }
+        find_and_kill_processes_from_directory(root_path_str)
+            .map_err(|e| format!("Failed to terminate processes: {}", e))?;
 
         // Rename the existing installation directory
         root_path_renamed = format!("{}_{}", root_path_str, generate_random_string(8));
@@ -110,20 +124,21 @@ fn main() {
             root_path_renamed
         );
         fs::rename(&root_path, &root_path_renamed)
-            .expect("Failed to rename existing installation directory");
+            .map_err(|e| format!("Failed to rename existing installation directory: {}", e))?;
     }
 
     println!("Preparing and cleaning installation directory...");
     remove_dir_all_ext::ensure_empty_dir(&root_path)
-        .expect("Failed to clean installation directory");
+        .map_err(|e| format!("Failed to clean installation directory: {}", e))?;
 
     // Install the application
     let quiet = false;
     let install_result = app.install(quiet, &root_path);
 
     // Handle rollback if installation fails
-    if install_result.is_ok() == false {
-        println!("Installation failed! {}", install_result.unwrap_err());
+    if install_result.is_err() {
+        let error_message = install_result.unwrap_err();
+        println!("Installation failed! {}", error_message);
         if !root_path_renamed.is_empty() {
             println!("Rolling back installation...");
             let _ = find_and_kill_processes_from_directory(root_path_str);
@@ -131,8 +146,7 @@ fn main() {
             let _ = fs::rename(&root_path_renamed, &root_path);
         }
 
-        // exit the installer with an error code
-        std::process::exit(1);
+        return Err(format!("Installation failed: {}", error_message));
     }
 
     println!("Installation completed successfully!");
@@ -143,7 +157,9 @@ fn main() {
 
     // Write the uninstall registry keys
     windows::write_uninstall_entry(&manifest, &root_path)
-        .expect("Failed to write uninstall registry key");
+        .map_err(|e| format!("Failed to write uninstall registry key: {}", e))?;
+
+    Ok(())
 }
 
 fn format_bytes(bytes: u64) -> String {

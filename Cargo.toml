@@ -28,5 +28,5 @@ bytesize = "1.3.0"
 anyhow = "1.0.86"
 winreg = "0.52.0"
 remove_dir_all_ext = "0.8.4"
-libsui = "0.3.0"
+libsui = { path = "../sui" }
 serde = "1.0.204"

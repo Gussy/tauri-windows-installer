@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 const SETUP_EXE: &str = "setup.exe";
 const SETUP_MISSING_ERR: &str = "setup.exe not found in manifest directory, please build the setup project:\n  cargo build --package twi_installer";
+const MANIFEST_FILENAME: &str = "app_manifest.xml";
 
 fn main() {
     // Only 64-bit is supported
@@ -38,6 +39,7 @@ fn main() {
             fs::remove_file(&setup_dest_path).expect("Failed to remove existing setup.exe");
         }
         fs::copy(&setup_source_path, &setup_dest_path).expect("Failed to copy setup.exe");
+        println!("cargo:rerun-if-changed={}", setup_source_path.display());
         println!("cargo:rerun-if-changed={}", setup_dest_path.display());
     }
 
@@ -52,4 +54,14 @@ fn main() {
     fs::copy(&setup_source_path, &setup_dest_path).expect("Failed to copy setup.exe");
     println!("cargo:rerun-if-changed={}", setup_source_path.display());
     println!("cargo:rustc-env=SETUP_EXE={}", SETUP_EXE);
+
+    // Copy the application manifest for bundling
+    let manifest_source_path = manifest_dir.join(MANIFEST_FILENAME);
+    let manifest_dest_path = out_dir.join(MANIFEST_FILENAME);
+    if manifest_source_path.exists() {
+        fs::copy(&manifest_source_path, &manifest_dest_path)
+            .expect("Failed to copy application manifest");
+        println!("cargo:rerun-if-changed={}", manifest_source_path.display());
+    }
+    println!("cargo:rustc-env=MANIFEST_FILENAME={}", MANIFEST_FILENAME);
 }

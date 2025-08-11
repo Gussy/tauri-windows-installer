@@ -1,4 +1,6 @@
+use serde_json::Error as SerdeError;
 use std::fs;
+use std::io::Error as IoError;
 
 use serde::Deserialize;
 
@@ -19,21 +21,43 @@ pub enum Webview2Bundle {
     Evergreen,
 }
 
-pub fn load_tauri_config(tauri_conf_path: &str) -> (tauri::Config, TauriWindowsInstaller) {
-    let tauri_conf_contents =
-        fs::read_to_string(tauri_conf_path).expect("Failed to read tauri config file");
+#[derive(Debug)]
+pub enum ConfigError {
+    Io(IoError),
+    Serde(SerdeError),
+}
 
-    let tauri_conf: tauri::Config =
-        serde_json::from_str(&tauri_conf_contents).expect("Failed to parse tauri config file");
+impl From<IoError> for ConfigError {
+    fn from(err: IoError) -> Self {
+        ConfigError::Io(err)
+    }
+}
 
+impl From<SerdeError> for ConfigError {
+    fn from(err: SerdeError) -> Self {
+        ConfigError::Serde(err)
+    }
+}
+
+pub fn load_tauri_config(
+    tauri_conf_path: &str,
+) -> Result<(tauri::Config, TauriWindowsInstaller), ConfigError> {
+    // Read the configuration file from the given path
+    let tauri_conf_contents = fs::read_to_string(tauri_conf_path)?;
+
+    // Parse the Tauri configuration from the JSON content
+    let tauri_conf: tauri::Config = serde_json::from_str(&tauri_conf_contents)?;
+
+    // Parse the plugin config or use the default if it's not present
     let plugin_config =
         if let Some(plugin_value) = tauri_conf.plugins.0.get("tauri-windows-installer") {
-            serde_json::from_value(plugin_value.clone()).expect("Failed to parse plugin config")
+            serde_json::from_value(plugin_value.clone())?
         } else {
             TauriWindowsInstaller::default()
         };
 
-    (tauri_conf, plugin_config)
+    // Return the parsed configuration and plugin config as a tuple
+    Ok((tauri_conf, plugin_config))
 }
 
 #[cfg(test)]
@@ -70,7 +94,8 @@ mod tests {
         file.write_all(config_json.to_string().as_bytes())
             .expect("Failed to write to test config file");
 
-        let (_tauri_conf, plugin_config) = load_tauri_config(config_path.to_str().unwrap());
+        let (_tauri_conf, plugin_config) =
+            load_tauri_config(config_path.to_str().unwrap()).expect("Failed to load tauri config");
 
         assert_eq!(plugin_config.icon, Some("icons/icon.ico".to_string()));
         assert_eq!(
@@ -99,7 +124,8 @@ mod tests {
         file.write_all(config_json.to_string().as_bytes())
             .expect("Failed to write to test config file");
 
-        let (_tauri_conf, plugin_config) = load_tauri_config(config_path.to_str().unwrap());
+        let (_tauri_conf, plugin_config) =
+            load_tauri_config(config_path.to_str().unwrap()).expect("Failed to load tauri config");
 
         assert_eq!(plugin_config.icon, None);
         assert_eq!(plugin_config.webview2.bundle, None);

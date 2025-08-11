@@ -4,6 +4,8 @@ pub use crate::manifest::SetupManifest;
 
 use libsui::find_section;
 
+// Resource names must be null-terminated strings
+pub const TWI_RESOURCE: &str = "__TWI";
 pub const MANIFEST_RESOURCE: &str = "__TWI_MANIFEST";
 pub const WEBVIEW_RESOURCE: &str = "__TWI_WEBVIEW";
 pub const WEBVIEW_RESOURCE_FILENAME: &str = "__TWI_WEBVIEW_EXE";
@@ -34,4 +36,8 @@ pub fn get_webview2_filename() -> String {
         .and_then(|bytes| std::str::from_utf8(bytes).ok())
         .unwrap_or("")
         .to_string()
+}
+
+pub fn is_bundled() -> bool {
+    find_section(TWI_RESOURCE).is_some()
 }
