@@ -32,6 +32,9 @@ fn main() {
     use std::path::{Path, PathBuf};
     use std::{fs, io};
 
+    let args: Vec<String> = std::env::args().collect();
+    let silent = args.iter().any(|a| a == "--silent" || a == "/silent");
+
     // Get name of the currently running bniary at runtime
     let binary_name = PathBuf::from(
         std::env::current_exe()
@@ -87,16 +90,17 @@ fn main() {
     match get_free_space(root_path_str) {
         Ok(free_space) => {
             if free_space < required_space {
-                show_error_dialog(
-                    "Not enough disk space",
-                    &format!(
-                        "{} requires at least {} disk space to be installed. There is only {} available.",
-                        manifest.title,
-                        format_bytes(required_space),
-                        format_bytes(free_space)
-                    ),
+                let msg = format!(
+                    "{} requires at least {} disk space to be installed. There is only {} available.",
+                    manifest.title,
+                    format_bytes(required_space),
+                    format_bytes(free_space)
                 );
-                return;
+                if !silent {
+                    show_error_dialog("Not enough disk space", &msg);
+                }
+                eprintln!("{}", msg);
+                std::process::exit(2);
             } else {
                 println!(
                     "There is {} free space available at destination, this package requires {}.",
@@ -113,7 +117,7 @@ fn main() {
     // Check if the application is already installed
     if !is_directory_empty(&root_path).unwrap() {
         let result =
-            show_overwrite_repair_dialog(&manifest.title, &manifest.name, &manifest.version, false);
+            show_overwrite_repair_dialog(&manifest.title, &manifest.name, &manifest.version, silent);
 
         if !result {
             println!("User cancelled installation");

@@ -1,5 +1,2 @@
-.hermit
 /target/
-*.exe
-.notes
-/bundler/setup.exe
+/packer/output/

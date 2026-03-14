@@ -55,3 +55,42 @@ tasks:
     desc: Clean build artifacts
     cmds:
       - cargo clean
+
+  vm:deps:
+    desc: Install macOS dependencies for VM testing
+    cmds:
+      - brew bundle
+
+  vm:build-image:
+    desc: Build Windows 11 ARM golden image with Packer
+    cmds:
+      - cd packer && packer init . && packer build -force -var "iso_path={{.ISO_PATH}}" -var "virtio_iso_path={{.VIRTIO_ISO_PATH}}" .
+
+  vm:snapshot:
+    desc: Create clean baseline snapshot
+    cmds:
+      - ./tests/helpers/vm.sh snapshot-create
+
+  vm:start:
+    desc: Start the test VM
+    cmds:
+      - utmctl start {{.VM_NAME | default "windows-11-test"}}
+
+  vm:stop:
+    desc: Stop the test VM
+    cmds:
+      - utmctl stop {{.VM_NAME | default "windows-11-test"}}
+
+  test:e2e:
+    desc: Run all end-to-end VM tests
+    env:
+      SETUP_EXE: '{{.SETUP_EXE | default "demo-app-setup.exe"}}'
+    cmds:
+      - ./tests/run.sh
+
+  test:e2e:single:
+    desc: Run a single VM test (task test:e2e:single -- test-fresh-install)
+    env:
+      SETUP_EXE: '{{.SETUP_EXE | default "demo-app-setup.exe"}}'
+    cmds:
+      - ./tests/run.sh {{.CLI_ARGS}}
