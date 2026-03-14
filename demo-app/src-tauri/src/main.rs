@@ -4,7 +4,9 @@
 fn main() {
     // Handle uninstall on Windows
     #[cfg(target_os = "windows")]
-    twi_uninstall::handle_uninstall(&"Demo App", &"com.gussy.demo-app"); // TODO: Get this at build time
+    if twi_uninstall::handle_uninstall() {
+        std::process::exit(0);
+    }
 
     demo_app_lib::run()
 }

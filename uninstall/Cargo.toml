@@ -6,13 +6,16 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
+twi_bundler_lib.workspace = true
 anyhow.workspace = true
 remove_dir_all_ext.workspace = true
+serde.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 winreg.workspace = true
+serde_json.workspace = true
+sysinfo.workspace = true
 windows = { version = "0.58.0", features = [
     "Win32_UI_Shell",
     "Win32_Storage_FileSystem",
-    "Win32_UI_WindowsAndMessaging",
 ] }

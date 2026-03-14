@@ -2,7 +2,7 @@ mod plugin_config;
 mod webview2;
 
 use bundler::{
-    manifest::SetupManifest, APPLICATION_RESOURCE, MANIFEST_RESOURCE, TWI_RESOURCE,
+    manifest::SetupManifest, BUNDLE_RESOURCE, MANIFEST_RESOURCE, TWI_RESOURCE,
     WEBVIEW2_RESOURCE, WEBVIEW2_RESOURCE_FILENAME,
 };
 use bytesize::ByteSize;
@@ -22,13 +22,17 @@ struct Args {
     #[arg(short = 'c', long)]
     tauri_conf: String,
 
-    /// Path to application to bundle
+    /// Path to application executable or directory to bundle
     #[arg(short, long)]
     app: String,
 
     /// Title of the bundled application
     #[arg(short, long)]
     title: String,
+
+    /// Main executable name (required when --app is a directory, e.g. "my-app.exe")
+    #[arg(long)]
+    main_exe: Option<String>,
 
     /// Command to sign the output executable. The output file path is appended as the last argument.
     /// Example: --sign-command "signtool sign /fd SHA256 /f cert.pfx /p password"
@@ -72,19 +76,45 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  No icon specified, skipping icon addition");
     }
 
-    // Add the application executable
-    let app_exe = Path::new(&args.app)
-        .file_name()
-        .unwrap()
-        .to_str()
-        .unwrap();
-    let app_data = fs::read(&args.app)?;
-    let app_size = app_data.len() as u64;
-    println!(
-        "  Loaded application executable: {} ({} bytes)",
-        app_exe,
-        ByteSize(app_size)
-    );
+    // Create the tar bundle and determine the main executable name
+    let app_path = Path::new(&args.app);
+    let (bundle_data, main_exe_name) = if app_path.is_dir() {
+        let main_exe = args.main_exe.as_deref().ok_or(
+            "--main-exe is required when --app is a directory"
+        )?;
+
+        // Verify the main exe exists in the directory
+        if !app_path.join(main_exe).exists() {
+            return Err(format!(
+                "Main executable '{}' not found in directory '{}'",
+                main_exe,
+                args.app
+            ).into());
+        }
+
+        let bundle = create_tar_from_directory(app_path)?;
+        println!(
+            "  Bundled directory: {} ({}, main exe: {})",
+            args.app,
+            ByteSize(bundle.len() as u64),
+            main_exe
+        );
+        (bundle, main_exe.to_string())
+    } else {
+        let exe_name = app_path
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string();
+        let bundle = create_tar_from_file(app_path, &exe_name)?;
+        println!(
+            "  Bundled application: {} ({})",
+            exe_name,
+            ByteSize(bundle.len() as u64)
+        );
+        (bundle, exe_name)
+    };
 
     // Create the manifest
     let manifest = SetupManifest {
@@ -92,11 +122,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         title: args.title,
         version: tauri_conf.version.clone().unwrap_or_else(|| "0.0.0".to_owned()),
         identifier: tauri_conf.identifier.clone(),
-        application: app_exe.to_owned(),
+        application: main_exe_name,
+        publisher: tauri_conf.bundle.publisher.clone().unwrap_or_default(),
     };
 
-    // Write application data as a PE resource
-    setup_pe = setup_pe.write_resource(APPLICATION_RESOURCE, app_data)?;
+    // Write bundle data as a PE resource
+    setup_pe = setup_pe.write_resource(BUNDLE_RESOURCE, bundle_data)?;
 
     // Write manifest as a PE resource
     setup_pe = setup_pe.write_resource(MANIFEST_RESOURCE, manifest.to_binary()?)?;
@@ -128,6 +159,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let output_filename = format!("{}-setup.exe", manifest.name);
     let mut output_file = fs::File::create(&output_filename)?;
     setup_pe.build(&mut output_file)?;
+    drop(output_file);
+
+    // Embed PE version info resources (FileVersion, ProductName, etc.)
+    set_version_info(&output_filename, &manifest)?;
 
     // Sign the output executable if a sign command is provided
     // CLI flag takes precedence over plugin config
@@ -146,6 +181,93 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     Ok(())
+}
+
+fn create_tar_from_file(
+    file_path: &Path,
+    name: &str,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let data = fs::read(file_path)?;
+    let mut builder = tar::Builder::new(Vec::new());
+
+    let mut header = tar::Header::new_gnu();
+    header.set_size(data.len() as u64);
+    header.set_mode(0o755);
+    header.set_cksum();
+
+    builder.append_data(&mut header, name, data.as_slice())?;
+    Ok(builder.into_inner()?)
+}
+
+fn create_tar_from_directory(
+    dir_path: &Path,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let mut builder = tar::Builder::new(Vec::new());
+    builder.append_dir_all(".", dir_path)?;
+    Ok(builder.into_inner()?)
+}
+
+fn set_version_info(
+    output_path: &str,
+    manifest: &SetupManifest,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use editpe::Image;
+    use editpe::types::FixedFileInfo;
+
+    let pe_data = fs::read(output_path)?;
+    let mut image = Image::parse(pe_data)?;
+
+    let mut resources = image.resource_directory().cloned().unwrap_or_default();
+
+    // Parse version string "1.2.3" into VersionU32 (major = 1.2, minor = 3.0)
+    let version = parse_version_u32(&manifest.version);
+
+    let version_info = editpe::VersionInfo {
+        info: FixedFileInfo {
+            file_version: version,
+            product_version: version,
+            ..FixedFileInfo::default()
+        },
+        strings: vec![editpe::VersionStringTable {
+            key: "040904B0".to_string(), // US English, Unicode
+            strings: indexmap::indexmap! {
+                "CompanyName".to_string() => manifest.publisher.clone(),
+                "FileDescription".to_string() => format!("{} Setup", manifest.title),
+                "FileVersion".to_string() => manifest.version.clone(),
+                "InternalName".to_string() => format!("{}-setup", manifest.name),
+                "OriginalFilename".to_string() => format!("{}-setup.exe", manifest.name),
+                "ProductName".to_string() => manifest.title.clone(),
+                "ProductVersion".to_string() => manifest.version.clone(),
+            },
+        }],
+        vars: vec![],
+    };
+
+    resources.set_version_info(&version_info)?;
+    image.set_resource_directory(resources)?;
+
+    fs::write(output_path, image.data())?;
+    println!("  Set version info: {}", manifest.version);
+
+    Ok(())
+}
+
+fn parse_version_u32(version_str: &str) -> editpe::types::VersionU32 {
+    let parts: Vec<u16> = version_str
+        .split('.')
+        .filter_map(|p| p.parse().ok())
+        .collect();
+
+    let major = *parts.get(0).unwrap_or(&0);
+    let minor = *parts.get(1).unwrap_or(&0);
+    let patch = *parts.get(2).unwrap_or(&0);
+    let build = *parts.get(3).unwrap_or(&0);
+
+    // PE version format: major field = (major << 16) | minor, minor field = (patch << 16) | build
+    editpe::types::VersionU32 {
+        major: ((major as u32) << 16) | minor as u32,
+        minor: ((patch as u32) << 16) | build as u32,
+    }
 }
 
 fn sign_executable(

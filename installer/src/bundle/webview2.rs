@@ -1,9 +1,6 @@
-use crate::bundle::Bundle;
-
 use anyhow::{anyhow, Result};
 use std::env;
 use std::fs;
-use std::path::PathBuf;
 use std::process::Command as Process;
 
 pub(crate) struct WebView2 {
@@ -13,8 +10,8 @@ pub(crate) struct WebView2 {
     pub installed: bool,
 }
 
-impl Bundle for WebView2 {
-    fn load() -> Self {
+impl WebView2 {
+    pub fn load() -> Self {
         let data = bundler::get_webview2_data();
         let bundled = data.is_some();
         let exe = bundler::get_webview2_filename();
@@ -49,12 +46,8 @@ impl Bundle for WebView2 {
         false
     }
 
-    fn install(&self, quiet: bool, _path: &PathBuf) -> Result<()> {
-        let args = if quiet {
-            vec!["/silent", "/install"]
-        } else {
-            vec!["/install"]
-        };
+    pub fn install(&self) -> Result<()> {
+        let args = vec!["/silent", "/install"];
 
         // Copy the installer to a temp location
         let temp_dir = env::temp_dir();

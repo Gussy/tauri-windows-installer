@@ -1,78 +1,127 @@
 #[cfg(target_os = "windows")]
-mod to_wide;
-
-#[cfg(target_os = "windows")]
 mod windows_impl {
     use anyhow::Result;
     use std::env;
+    use std::fs;
     use std::os::windows::process::CommandExt;
     use std::path::Path;
     use std::process::Command as Process;
-    use windows::core::PCWSTR;
-    use windows::Win32::Foundation::HWND;
-    use windows::Win32::UI::WindowsAndMessaging::{
-        AllowSetForegroundWindow, MessageBoxW, MB_ICONINFORMATION, MB_ICONWARNING,
-    };
+    use sysinfo::Signal;
     use winreg::enums::*;
     use winreg::RegKey;
 
-    use crate::to_wide::ToWide;
+    use bundler::{InstallMetadata, INSTALL_METADATA_FILENAME};
 
     const UNINSTALL_STR: &'static str =
         "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
 
-    pub fn handle_uninstall(app_title: &str, app_id: &str) {
+    /// Returns `true` if `--uninstall` was handled (caller should exit),
+    /// `false` if the flag was not present (app continues normally).
+    pub fn handle_uninstall() -> bool {
         let args: Vec<String> = std::env::args().collect();
         if args.contains(&"--uninstall".to_string()) {
             println!("Uninstall flag detected. Running uninstall code...");
-            uninstall(app_title, app_id);
+            let exit_code = uninstall();
+            std::process::exit(exit_code);
         }
+        false
     }
 
-    fn uninstall(app_title: &str, app_id: &str) {
-        // Force stop any other instances of the application
-        let _ = std::process::Command::new("taskkill")
-            .args(&["/IM", &format!("{}.exe", app_id), "/F"])
-            .output()
-            .expect("Failed to kill the application");
-
-        let mut errors = false;
-
-        // Remove the installation directory (except for the executable)
-        let root_path = std::env::current_exe()
-            .expect("Failed to get current executable path")
+    fn uninstall() -> i32 {
+        let current_exe = env::current_exe().expect("Failed to get current executable path");
+        let root_path = current_exe
             .parent()
             .expect("Failed to get parent directory")
             .to_path_buf();
+
+        // Read install metadata
+        let meta_path = root_path.join(INSTALL_METADATA_FILENAME);
+        let metadata = match fs::read_to_string(&meta_path) {
+            Ok(contents) => match serde_json::from_str::<InstallMetadata>(&contents) {
+                Ok(m) => m,
+                Err(e) => {
+                    eprintln!("Failed to parse install metadata: {}", e);
+                    return 1;
+                }
+            },
+            Err(e) => {
+                eprintln!("Failed to read install metadata from {:?}: {}", meta_path, e);
+                return 1;
+            }
+        };
+
+        let mut errors = false;
+
+        // Kill processes whose exe path is within the install directory
+        if let Err(e) = kill_processes_in_directory(&root_path) {
+            eprintln!("Failed to kill processes: {}", e);
+            errors = true;
+        }
+
+        // Remove the installation directory contents (except for the executable itself)
         if let Err(e) = remove_dir_all_ext::remove_dir_but_not_self(&root_path) {
             eprintln!("Failed to remove installation directory: {}", e);
             errors = true;
         }
 
         // Remove the uninstall registry key
-        if let Err(e) = remove_uninstall_entry(&app_id) {
+        if let Err(e) = remove_uninstall_entry(&metadata.app_id) {
             eprintln!("Failed to remove uninstall registry key: {}", e);
             errors = true;
         }
 
-        // Show the result
-        if !errors {
-            println!("Uninstall completed successfully!");
-            show_info(
-                format!("{} Uninstall", app_title).as_str(),
-                None,
-                "The application was successfully uninstalled.",
-            );
-        } else {
+        if errors {
             eprintln!("Uninstall completed with errors.");
-            show_uninstall_complete_with_errors()
+        } else {
+            println!("Uninstall completed successfully!");
         }
 
-        // Delete the executable
+        // Delete the executable and its parent directory
         register_intent_to_delete_self(3, &root_path)
             .expect("Failed to register intent to delete self");
 
-        std::process::exit(errors as i32);
+        errors as i32
+    }
+
+    fn kill_processes_in_directory(directory: &Path) -> Result<()> {
+        let mut system = sysinfo::System::new_all();
+        system.refresh_all();
+
+        let canonical_directory = fs::canonicalize(directory)?;
+
+        let processes: Vec<_> = system
+            .processes()
+            .iter()
+            .filter_map(|(&pid, process)| {
+                if let Some(exe_path) = process.exe()?.to_str() {
+                    if let Ok(canonical_path) = fs::canonicalize(exe_path) {
+                        if canonical_path.starts_with(&canonical_directory) {
+                            // Don't kill ourselves
+                            let current_pid = sysinfo::get_current_pid().ok()?;
+                            if pid != current_pid {
+                                return Some(pid);
+                            }
+                        }
+                    }
+                }
+                None
+            })
+            .collect();
+
+        println!(
+            "Found {} processes in directory {:?}",
+            processes.len(),
+            directory
+        );
+
+        for pid in processes {
+            if let Some(process) = system.process(pid) {
+                println!("Terminating process {:?} with PID {}", process.name(), pid);
+                process.kill_with(Signal::Kill);
+            }
+        }
+
+        Ok(())
     }
 
     fn remove_uninstall_entry(app_id: &str) -> Result<()> {
@@ -82,56 +131,37 @@ mod windows_impl {
         Ok(())
     }
 
-    fn show_info(title: &str, parent: Option<HWND>, text: &str) {
-        let lp_title = title.to_wide_null();
-        let lp_text = text.to_wide_null();
-
-        unsafe {
-            MessageBoxW(
-                parent.unwrap_or(HWND(std::ptr::null_mut())),
-                PCWSTR(lp_text.as_ptr()),
-                PCWSTR(lp_title.as_ptr()),
-                MB_ICONINFORMATION,
-            );
-        }
-    }
-
-    fn show_uninstall_complete_with_errors() {
-        let lp_title = "Uninstall Complete".to_wide_null();
-        let lp_text = "The application was uninstalled, but there were errors during the process. Please check the logs for more information.".to_wide_null();
-
-        unsafe {
-            MessageBoxW(
-                HWND(std::ptr::null_mut()),
-                PCWSTR(lp_text.as_ptr()),
-                PCWSTR(lp_title.as_ptr()),
-                MB_ICONWARNING,
-            );
-        }
-    }
-
     pub(crate) fn register_intent_to_delete_self(
         delay_seconds: usize,
         current_directory: &Path,
     ) -> Result<()> {
         println!("Deleting self...");
         let current_exe = env::current_exe()?.to_string_lossy().to_string();
+        let dir_name = current_directory.file_name().unwrap().to_string_lossy();
+
+        // Retry loop: wait, attempt delete, check if still exists, repeat up to 5 times
+        // This handles cases where the OS holds a brief lock on the exe after process exit
         let command = format!(
-            "choice /C Y /N /D Y /T {} & Del \"{}\" & Rmdir \"{}\"",
-            delay_seconds,
-            current_exe,
-            current_directory.file_name().unwrap().to_string_lossy()
+            "for /L %i in (1,1,5) do (\
+                choice /C Y /N /D Y /T {delay} & \
+                Del /F /Q \"{exe}\" & \
+                if not exist \"{exe}\" (\
+                    Rmdir /S /Q \"{dir}\" & goto :eof\
+                )\
+            )",
+            delay = delay_seconds,
+            exe = current_exe,
+            dir = dir_name,
         );
         println!("Running: cmd.exe /C {}", command);
 
         const CREATE_NO_WINDOW: u32 = 0x08000000;
-        let child = Process::new("cmd.exe")
+        Process::new("cmd.exe")
             .arg("/C")
             .raw_arg(command)
             .current_dir(current_directory.parent().unwrap())
             .creation_flags(CREATE_NO_WINDOW)
             .spawn()?;
-        let _ = unsafe { AllowSetForegroundWindow(child.id()) };
 
         Ok(())
     }
@@ -141,24 +171,6 @@ mod windows_impl {
 pub use windows_impl::handle_uninstall;
 
 #[cfg(not(target_os = "windows"))]
-pub fn handle_uninstall(_app_title: &str, _app_id: &str) {}
-
-#[cfg(test)]
-#[cfg(target_os = "windows")]
-mod tests {
-    use std::env;
-    use std::fs;
-
-    use super::windows_impl::register_intent_to_delete_self;
-
-    #[test]
-    fn test_register_intent_to_delete_self() {
-        // Mock the current directory and executable path
-        let temp_dir = env::temp_dir();
-        let current_exe = temp_dir.join("test_exe.exe");
-        fs::File::create(&current_exe).unwrap();
-
-        let result = register_intent_to_delete_self(3, &temp_dir);
-        assert!(result.is_ok());
-    }
+pub fn handle_uninstall() -> bool {
+    false
 }

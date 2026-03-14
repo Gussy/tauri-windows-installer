@@ -8,6 +8,7 @@ pub struct SetupManifest {
     pub version: String,
     pub identifier: String,
     pub application: String,
+    pub publisher: String,
 }
 
 impl SetupManifest {
@@ -22,6 +23,15 @@ impl SetupManifest {
     }
 }
 
+/// Metadata written to disk during install, read by uninstall at runtime
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct InstallMetadata {
+    pub app_title: String,
+    pub app_id: String,
+    pub app_exe: String,
+    pub version: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -34,6 +44,7 @@ mod tests {
             version: "1.2.3".to_string(),
             identifier: "com.example.testapp".to_string(),
             application: "testapp.exe".to_string(),
+            publisher: "Example Inc.".to_string(),
         };
 
         let binary = manifest.to_binary().expect("Failed to serialize manifest");
@@ -51,6 +62,7 @@ mod tests {
             version: "0.1.0".to_string(),
             identifier: "com.example.myapp".to_string(),
             application: "myapp.exe".to_string(),
+            publisher: "My Publisher".to_string(),
         };
 
         let binary = manifest.to_binary().unwrap();
@@ -61,6 +73,7 @@ mod tests {
         assert_eq!(result.version, "0.1.0");
         assert_eq!(result.identifier, "com.example.myapp");
         assert_eq!(result.application, "myapp.exe");
+        assert_eq!(result.publisher, "My Publisher");
     }
 
     #[test]
@@ -71,6 +84,7 @@ mod tests {
             version: String::new(),
             identifier: String::new(),
             application: String::new(),
+            publisher: String::new(),
         };
 
         let binary = manifest.to_binary().unwrap();
@@ -82,5 +96,19 @@ mod tests {
     fn test_manifest_invalid_binary() {
         let result = SetupManifest::from_binary(&[0xFF, 0xFF, 0xFF]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_install_metadata_roundtrip() {
+        let metadata = InstallMetadata {
+            app_title: "My App".to_string(),
+            app_id: "com.example.myapp".to_string(),
+            app_exe: "myapp.exe".to_string(),
+            version: "1.0.0".to_string(),
+        };
+
+        let json = serde_json::to_string_pretty(&metadata).unwrap();
+        let deserialized: InstallMetadata = serde_json::from_str(&json).unwrap();
+        assert_eq!(metadata, deserialized);
     }
 }

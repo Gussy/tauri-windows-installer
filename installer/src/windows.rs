@@ -52,7 +52,7 @@ pub fn write_uninstall_entry(manifest: &SetupManifest, root_path: &PathBuf) -> R
     let now = Local::now();
     let formatted_date = format!("{}{:02}{:02}", now.year(), now.month(), now.day());
 
-    let uninstall_cmd = format!("{} --uninstall", &main_exe_path);
+    let uninstall_cmd = format!("\"{}\" --uninstall", main_exe_path);
 
     // Open or create the app-specific subkey
     let hkcu = RegKey::predef(HKEY_CURRENT_USER);
@@ -65,8 +65,9 @@ pub fn write_uninstall_entry(manifest: &SetupManifest, root_path: &PathBuf) -> R
     app_key.set_value("DisplayVersion", version_str)?;
     app_key.set_value("InstallDate", &formatted_date)?;
     app_key.set_value("InstallLocation", &root_path_str)?;
-    app_key.set_value("Publisher", &"")?; // TODO: Set publisher
+    app_key.set_value("Publisher", &manifest.publisher)?;
     app_key.set_value("UninstallString", &uninstall_cmd)?;
+    app_key.set_value("QuietUninstallString", &uninstall_cmd)?;
     app_key.set_value("EstimatedSize", &(folder_size as u32 / 1024))?;
     app_key.set_value("NoModify", &1u32)?;
     app_key.set_value("NoRepair", &1u32)?;
