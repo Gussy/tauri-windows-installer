@@ -7,7 +7,7 @@
 //! # Example
 //!
 //! ```no_run
-//! use bundler::bundle::{bundle, BundleOptions};
+//! use twi_core::bundle::{bundle, BundleOptions};
 //! use std::path::PathBuf;
 //!
 //! let options = BundleOptions {

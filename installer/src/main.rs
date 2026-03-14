@@ -34,16 +34,16 @@ fn run_installer() -> Result<(), String> {
     check_os_version();
 
     // Check if this is a TWI-bundled executable
-    if !bundler::is_bundled() {
+    if !twi_core::is_bundled() {
         return Err("This executable is not a valid TWI setup package.".to_string());
     }
 
     // Extract manifest
-    let manifest = bundler::get_manifest();
+    let manifest = twi_core::get_manifest();
     println!("Application: {}", manifest.name);
 
     // Load bundle data
-    let bundle_data = bundler::get_bundle_data();
+    let bundle_data = twi_core::get_bundle_data();
     let bundle_size = bundle_data.len() as u64;
     println!("Bundle size: {}", format_bytes(bundle_size));
 
@@ -147,13 +147,13 @@ fn run_installer() -> Result<(), String> {
         .map_err(|e| format!("Failed to write uninstall registry key: {}", e))?;
 
     // Write install metadata for the uninstaller
-    let metadata = bundler::InstallMetadata {
+    let metadata = twi_core::InstallMetadata {
         app_title: manifest.title.clone(),
         app_id: manifest.identifier.clone(),
         app_exe: manifest.application.clone(),
         version: manifest.version.clone(),
     };
-    let meta_path = root_path.join(bundler::INSTALL_METADATA_FILENAME);
+    let meta_path = root_path.join(twi_core::INSTALL_METADATA_FILENAME);
     fs::write(
         &meta_path,
         serde_json::to_string_pretty(&metadata).map_err(|e| format!("Failed to serialize metadata: {}", e))?,

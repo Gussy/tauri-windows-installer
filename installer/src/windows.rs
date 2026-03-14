@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use ::windows::core::PCWSTR;
 use anyhow::{anyhow, Result};
-use bundler::SetupManifest;
+use twi_core::SetupManifest;
 use chrono::prelude::*;
 use windows::{
     core::{GUID, PWSTR},

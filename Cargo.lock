@@ -816,7 +816,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-shell",
- "twi_uninstall",
+ "twi_uninstaller",
 ]
 
 [[package]]
@@ -4890,11 +4890,11 @@ dependencies = [
  "serde_json",
  "tauri",
  "tempfile",
- "twi_bundler_lib",
+ "twi_core",
 ]
 
 [[package]]
-name = "twi_bundler_lib"
+name = "twi_core"
 version = "0.1.0"
 dependencies = [
  "bincode",
@@ -4924,7 +4924,7 @@ dependencies = [
  "sysinfo",
  "tar",
  "tempdir",
- "twi_bundler_lib",
+ "twi_core",
  "webview2-com 0.32.0",
  "winapi",
  "windows 0.58.0",
@@ -4932,7 +4932,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "twi_uninstall"
+name = "twi_uninstaller"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -4940,7 +4940,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sysinfo",
- "twi_bundler_lib",
+ "twi_core",
  "windows 0.58.0",
  "winreg 0.52.0",
 ]

@@ -4,7 +4,7 @@
 fn main() {
     // Handle uninstall on Windows
     #[cfg(target_os = "windows")]
-    if twi_uninstall::handle_uninstall() {
+    if twi_uninstaller::handle_uninstall() {
         std::process::exit(0);
     }
 

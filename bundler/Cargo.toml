@@ -10,7 +10,7 @@ name = "bundler"
 path = "src/main.rs"
 
 [dependencies]
-twi_bundler_lib = { workspace = true, features = ["bundler"] }
+twi_core = { workspace = true, features = ["bundler"] }
 tauri.workspace = true
 serde.workspace = true
 bytesize.workspace = true

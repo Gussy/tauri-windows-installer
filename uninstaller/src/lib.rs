@@ -10,7 +10,7 @@ mod windows_impl {
     use winreg::enums::*;
     use winreg::RegKey;
 
-    use bundler::{InstallMetadata, INSTALL_METADATA_FILENAME};
+    use twi_core::{InstallMetadata, INSTALL_METADATA_FILENAME};
 
     const UNINSTALL_STR: &'static str =
         "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall";

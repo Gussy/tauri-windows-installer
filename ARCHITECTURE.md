@@ -5,13 +5,13 @@ This document describes the architecture of `tauri-windows-installer` (TWI) for 
 ## Crate Overview
 
 ```
-bundler-lib/     Core library shared by all crates
+core/            Core library shared by all crates
 bundler/         CLI tool that creates setup executables
 installer/       Windows setup executable (runs on end-user machines)
-uninstall/       Uninstall library (linked into the installed app)
+uninstaller/     Uninstall library (linked into the installed app)
 ```
 
-### bundler-lib (`twi_bundler_lib`)
+### core (`twi_core`)
 
 Shared library with two roles:
 
@@ -22,7 +22,7 @@ The `bundler` feature gates `tar`, `zstd`, `editpe`, `indexmap`, and `shell-word
 
 ### bundler (CLI)
 
-Thin CLI wrapper around `bundler::bundle()`. Responsibilities:
+Thin CLI wrapper around `twi_core::bundle()`. Responsibilities:
 - Parse Tauri configuration (`tauri.conf.json`)
 - Resolve icon, WebView2, and sign command from config
 - Load the embedded `setup.exe` stub via `include_bytes!`
@@ -38,7 +38,7 @@ The setup executable that runs on Windows. Built as `setup.exe` and embedded int
 5. Writes `InstallMetadata` for the uninstaller
 6. Creates Windows registry uninstall entry
 
-### uninstall (`twi_uninstall`)
+### uninstaller (`twi_uninstaller`)
 
 Library linked into the installed application. When the app is launched with `--uninstall`, it reads `InstallMetadata`, removes files, cleans up registry entries, and schedules self-deletion.
 
@@ -68,7 +68,7 @@ When bundling a directory, `--main-exe` specifies which executable to launch aft
 ## Programmatic Usage
 
 ```rust
-use bundler::{bundle, BundleOptions};
+use twi_core::{bundle, BundleOptions};
 use std::path::PathBuf;
 
 let options = BundleOptions {
@@ -96,9 +96,9 @@ The caller provides the `setup.exe` bytes — how the stub is sourced is a deplo
 
 ## Cross-Compilation
 
-The workspace is designed so that `installer` and `uninstall` can be cross-compiled from macOS to `x86_64-pc-windows-msvc`:
+The workspace is designed so that `installer` and `uninstaller` can be cross-compiled from macOS to `x86_64-pc-windows-msvc`:
 
-- `bundler-lib` without the `bundler` feature has no C dependencies
+- `core` without the `bundler` feature has no C dependencies
 - `installer` uses `ruzstd` (pure Rust) instead of `zstd` (C bindings)
 - The `bundler` crate (which needs `zstd` for compression) only runs on the build machine
 
@@ -106,6 +106,6 @@ The workspace is designed so that `installer` and `uninstall` can be cross-compi
 
 **Short-term**: Use `beforeBundleCommand` in `tauri.conf.json` to run the bundler CLI after the Tauri build.
 
-**Long-term**: Call `bundler::bundle()` directly from the Tauri bundler. The library has no Tauri dependency — it accepts plain Rust types.
+**Long-term**: Call `twi_core::bundle()` directly from the Tauri bundler. The library has no Tauri dependency — it accepts plain Rust types.
 
 The sign command resolution chain is: CLI flag → plugin config (`signCommand`) → `tauri.conf.json` (`bundle.windows.signCommand`).

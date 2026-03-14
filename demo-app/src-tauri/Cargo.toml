@@ -17,7 +17,7 @@ crate-type = ["lib", "cdylib", "staticlib"]
 tauri-build = { version = "2.5.6", features = [] }
 
 [dependencies]
-twi_uninstall.workspace = true
+twi_uninstaller.workspace = true
 tauri = { version = "2.10.3", features = [] }
 tauri-plugin-shell = "2.3.5"
 serde = { version = "1", features = ["derive"] }

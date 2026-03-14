@@ -1,11 +1,11 @@
 [package]
-name = "twi_bundler_lib"
+name = "twi_core"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 
 [lib]
-name = "bundler"
+name = "twi_core"
 path = "src/lib.rs"
 
 [features]

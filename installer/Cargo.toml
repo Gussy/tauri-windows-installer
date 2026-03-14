@@ -9,7 +9,7 @@ name = "setup"
 path = "src/main.rs"
 
 [dependencies]
-twi_bundler_lib.workspace = true
+twi_core.workspace = true
 anyhow.workspace = true
 remove_dir_all_ext.workspace = true
 serde_json.workspace = true

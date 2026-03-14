@@ -1,7 +1,7 @@
 mod plugin_config;
 mod webview2;
 
-use bundler::{BundleOptions, WebView2Embedding};
+use twi_core::{BundleOptions, WebView2Embedding};
 use bytesize::ByteSize;
 use clap::Parser;
 use colored::*;
@@ -86,7 +86,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         on_progress: Some(Box::new(|msg| println!("  {}", msg.green()))),
     };
 
-    let output = bundler::bundle(options)?;
+    let output = twi_core::bundle(options)?;
 
     println!("{}", "Packaging complete.".green().bold());
     println!(

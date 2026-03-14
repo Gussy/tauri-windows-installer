@@ -12,9 +12,9 @@ pub(crate) struct WebView2 {
 
 impl WebView2 {
     pub fn load() -> Self {
-        let data = bundler::get_webview2_data();
+        let data = twi_core::get_webview2_data();
         let bundled = data.is_some();
-        let exe = bundler::get_webview2_filename();
+        let exe = twi_core::get_webview2_filename();
         let installed = Self::is_installed();
 
         Self {

@@ -2,10 +2,10 @@
 resolver = "2"
 members = [
     "demo-app/src-tauri",
-    "bundler-lib",
+    "core",
     "bundler",
     "installer",
-    "uninstall",
+    "uninstaller",
 ]
 package.version = "0.1.0"
 package.edition = "2021"
@@ -13,15 +13,15 @@ package.authors = ["@Gussy"]
 package.license = "MIT"
 
 # "demo-app/src-tauri" has its own Tauri build requirements,
-# "installer" and "uninstall" are Windows-only,
+# "installer" and "uninstaller" are Windows-only,
 # so they are not built by default
-default-members = ["bundler-lib", "bundler"]
+default-members = ["core", "bundler"]
 
 [workspace.dependencies]
 # Local dependencies
-twi_bundler_lib = { path = "bundler-lib" }
+twi_core = { path = "core" }
 twi_installer = { path = "installer" }
-twi_uninstall = { path = "uninstall" }
+twi_uninstaller = { path = "uninstaller" }
 
 # External dependencies
 tauri = { version = "2" }

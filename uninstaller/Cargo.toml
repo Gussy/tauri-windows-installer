@@ -1,12 +1,12 @@
 [package]
-name = "twi_uninstall"
+name = "twi_uninstaller"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
 [dependencies]
-twi_bundler_lib.workspace = true
+twi_core.workspace = true
 anyhow.workspace = true
 remove_dir_all_ext.workspace = true
 serde.workspace = true
