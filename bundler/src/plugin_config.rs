@@ -6,6 +6,8 @@ use serde::Deserialize;
 pub struct TauriWindowsInstaller {
     pub icon: Option<String>,
     pub webview2: Webview2Config,
+    #[serde(rename = "signCommand")]
+    pub sign_command: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -76,6 +78,39 @@ mod tests {
         assert_eq!(
             plugin_config.webview2.bundle,
             Some(Webview2Bundle::Evergreen)
+        );
+    }
+
+    #[test]
+    fn test_load_tauri_config_with_sign_command() {
+        let config_json = json!({
+            "$schema": null,
+            "productName": "test-app",
+            "version": "0.0.0",
+            "identifier": "com.example.test",
+            "app": {},
+            "build": {},
+            "bundle": {},
+            "plugins": {
+                "tauri-windows-installer": {
+                    "signCommand": "signtool sign /fd SHA256 /f cert.pfx",
+                    "webview2": {}
+                }
+            }
+        });
+
+        let temp_dir = std::env::temp_dir();
+        let config_path = temp_dir.join("tauri_config_with_sign.json");
+
+        let mut file = File::create(&config_path).expect("Failed to create test config file");
+        file.write_all(config_json.to_string().as_bytes())
+            .expect("Failed to write to test config file");
+
+        let (_tauri_conf, plugin_config) = load_tauri_config(config_path.to_str().unwrap());
+
+        assert_eq!(
+            plugin_config.sign_command,
+            Some("signtool sign /fd SHA256 /f cert.pfx".to_string())
         );
     }
 

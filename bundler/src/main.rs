@@ -10,6 +10,7 @@ use clap::Parser;
 use colored::*;
 use libsui::PortableExecutable;
 use plugin_config::{load_tauri_config, Webview2Bundle};
+use std::process::Command;
 use std::{env, fs, path::Path};
 use webview2::{download_webview2_evergreen, WEBVIEW2_EVERGREEN_EXE};
 
@@ -28,6 +29,12 @@ struct Args {
     /// Title of the bundled application
     #[arg(short, long)]
     title: String,
+
+    /// Command to sign the output executable. The output file path is appended as the last argument.
+    /// Example: --sign-command "signtool sign /fd SHA256 /f cert.pfx /p password"
+    /// Can also be set via the "signCommand" field in the tauri-windows-installer plugin config.
+    #[arg(short, long)]
+    sign_command: Option<String>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -122,6 +129,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut output_file = fs::File::create(&output_filename)?;
     setup_pe.build(&mut output_file)?;
 
+    // Sign the output executable if a sign command is provided
+    // CLI flag takes precedence over plugin config
+    let sign_command = args.sign_command.or(plugin_config.sign_command);
+    if let Some(ref sign_cmd) = sign_command {
+        sign_executable(sign_cmd, &output_filename)?;
+    }
+
     // Print the output filename and size
     let output_size = fs::metadata(&output_filename)?.len();
 
@@ -131,6 +145,47 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         format!("Created {} ({})", output_filename, ByteSize(output_size)).green()
     );
 
+    Ok(())
+}
+
+fn sign_executable(
+    sign_cmd: &str,
+    file_path: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    println!(
+        "  {}",
+        format!("Signing executable with: {} {}", sign_cmd, file_path).green()
+    );
+
+    // Parse the sign command — first token is the program, rest are arguments
+    let mut parts = shell_words::split(sign_cmd)
+        .map_err(|e| format!("Failed to parse sign command: {}", e))?;
+
+    if parts.is_empty() {
+        return Err("Sign command is empty".into());
+    }
+
+    let program = parts.remove(0);
+    parts.push(file_path.to_string());
+
+    let output = Command::new(&program)
+        .args(&parts)
+        .output()
+        .map_err(|e| format!("Failed to execute sign command '{}': {}", program, e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        return Err(format!(
+            "Sign command failed with exit code {}:\nstdout: {}\nstderr: {}",
+            output.status.code().unwrap_or(-1),
+            stdout.trim(),
+            stderr.trim()
+        )
+        .into());
+    }
+
+    println!("  {}", "Signing successful.".green());
     Ok(())
 }
 
