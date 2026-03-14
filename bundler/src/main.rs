@@ -1,13 +1,17 @@
+mod plugin_config;
+mod webview2;
+
 use bundler::{
-    exe_packager::{ExePackager, SetupManifest},
-    plugin_config::{load_tauri_config, Webview2Bundle},
-    webview2::{download_webview2_evergreen, WEBVIEW2_EVERGREEN_EXE},
+    manifest::SetupManifest, APPLICATION_RESOURCE, MANIFEST_RESOURCE, TWI_RESOURCE,
+    WEBVIEW2_RESOURCE, WEBVIEW2_RESOURCE_FILENAME,
 };
 use bytesize::ByteSize;
 use clap::Parser;
 use colored::*;
-use editpe::Image;
-use std::{env, path::Path};
+use libsui::PortableExecutable;
+use plugin_config::{load_tauri_config, Webview2Bundle};
+use std::{env, fs, path::Path};
+use webview2::{download_webview2_evergreen, WEBVIEW2_EVERGREEN_EXE};
 
 /// Tauri Windows Installer Bundler
 #[derive(Parser, Debug)]
@@ -26,7 +30,7 @@ struct Args {
     title: String,
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
     println!("{}", "Packaging Tauri application...".green().bold());
@@ -35,13 +39,12 @@ fn main() {
     let (tauri_conf, plugin_config) = load_tauri_config(&args.tauri_conf);
 
     // Load the setup.exe file
-    let mut setup_data = load_embedded_setup();
+    let setup_data = load_embedded_setup();
+
+    // Create a PortableExecutable from the setup data
+    let mut setup_pe = PortableExecutable::from(&setup_data)?;
 
     // Add an icon to the output executable
-    let mut image = Image::parse(&setup_data).expect("Failed to parse exe data");
-    let mut resources = image.resource_directory().cloned().unwrap_or_default();
-
-    // Use the icon specified in the plugin config, or the first png icon in the bundle config
     let icon = plugin_config.icon.or_else(|| {
         tauri_conf
             .bundle
@@ -52,8 +55,8 @@ fn main() {
     });
     if let Some(icon) = icon {
         let icon_path = Path::new(&args.tauri_conf).parent().unwrap().join(icon);
-        let icon_data = std::fs::read(&icon_path).expect("Failed to read icon data");
-        resources.set_icon(&icon_data).expect("Failed to set icon");
+        let icon_data = fs::read(&icon_path)?;
+        setup_pe = setup_pe.set_icon(&icon_data)?;
         println!(
             "  Added icon: {}",
             &icon_path.file_name().unwrap().to_str().unwrap()
@@ -62,15 +65,34 @@ fn main() {
         println!("  No icon specified, skipping icon addition");
     }
 
-    // Update the resource directory in the executable
-    image
-        .set_resource_directory(resources)
-        .expect("Failed to set resource directory");
-    setup_data = image.data().into();
-    println!("  Added resources to the setup file");
+    // Add the application executable
+    let app_exe = Path::new(&args.app)
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap();
+    let app_data = fs::read(&args.app)?;
+    let app_size = app_data.len() as u64;
+    println!(
+        "  Loaded application executable: {} ({} bytes)",
+        app_exe,
+        ByteSize(app_size)
+    );
 
-    // Create the packager
-    let mut packager = ExePackager::new(setup_data);
+    // Create the manifest
+    let manifest = SetupManifest {
+        name: tauri_conf.product_name.clone().unwrap_or_default(),
+        title: args.title,
+        version: tauri_conf.version.clone().unwrap_or_else(|| "0.0.0".to_owned()),
+        identifier: tauri_conf.identifier.clone(),
+        application: app_exe.to_owned(),
+    };
+
+    // Write application data as a PE resource
+    setup_pe = setup_pe.write_resource(APPLICATION_RESOURCE, app_data)?;
+
+    // Write manifest as a PE resource
+    setup_pe = setup_pe.write_resource(MANIFEST_RESOURCE, manifest.to_binary()?)?;
 
     // Handle the webview2 bundling
     match &plugin_config.webview2.bundle {
@@ -81,51 +103,35 @@ fn main() {
             );
 
             let webview_data = download_webview2_evergreen();
-            packager.add_file(WEBVIEW2_EVERGREEN_EXE, webview_data.to_vec());
+            setup_pe = setup_pe.write_resource(WEBVIEW2_RESOURCE, webview_data)?;
+            setup_pe = setup_pe.write_resource(
+                WEBVIEW2_RESOURCE_FILENAME,
+                WEBVIEW2_EVERGREEN_EXE.as_bytes().to_vec(),
+            )?;
         }
         None => {
             println!("  {}", "No webview2 bundle specified".blue());
         }
     }
 
-    // Add the application executable to the package
-    let app_exe = Path::new(&args.app).file_name().unwrap().to_str().unwrap();
-    let app_data = std::fs::read(&args.app).expect("Failed to read application executable");
-    let app_size: u64 = app_data
-        .len()
-        .try_into()
-        .expect("Failed to convert app data length");
-    packager.add_file(app_exe, app_data);
-    println!(
-        "  Loaded application executable: {} ({} bytes)",
-        app_exe,
-        ByteSize(app_size)
-    );
+    // Write the TWI marker resource
+    setup_pe = setup_pe.write_resource(TWI_RESOURCE, TWI_RESOURCE.as_bytes().to_vec())?;
 
-    // Create and add a manifest
-    let manifest = SetupManifest {
-        name: tauri_conf.product_name.clone().unwrap_or("".to_owned()),
-        title: args.title,
-        version: tauri_conf.version.clone().unwrap_or("0.0.0".to_owned()),
-        identifier: tauri_conf.identifier.clone(),
-        application: app_exe.to_owned(),
-    };
-    packager.add_manifest(&manifest);
-
-    // Package the executable with the added files and manifest
+    // Build the output executable
     let output_filename = format!("{}-setup.exe", manifest.name);
-    packager.package(Path::new(&output_filename));
+    let mut output_file = fs::File::create(&output_filename)?;
+    setup_pe.build(&mut output_file)?;
 
     // Print the output filename and size
-    let output_size = std::fs::metadata(&output_filename)
-        .expect("Failed to get output file metadata")
-        .len();
+    let output_size = fs::metadata(&output_filename)?.len();
 
     println!("{}", "Packaging complete.".green().bold());
     println!(
         "{}",
         format!("Created {} ({})", output_filename, ByteSize(output_size)).green()
     );
+
+    Ok(())
 }
 
 fn load_embedded_setup() -> Vec<u8> {

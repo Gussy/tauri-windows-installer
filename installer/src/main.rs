@@ -20,46 +20,46 @@ fn main() {
 
 #[cfg(target_os = "windows")]
 fn main() {
+    if let Err(e) = run_installer() {
+        use crate::dialogs::show_error_dialog;
+        eprintln!("Installation failed: {}", e);
+        show_error_dialog("Installation Error", &e);
+        std::process::exit(1);
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn run_installer() -> Result<(), String> {
     use crate::bundle::Bundle;
     use crate::bundle::{Application, WebView2};
     use crate::dialogs::{show_error_dialog, show_overwrite_repair_dialog};
     use crate::process::find_and_kill_processes_from_directory;
     use crate::windows::{get_free_space, get_local_app_data};
 
-    use bundler::extract_package;
-    use rand::distributions::Alphanumeric;
-    use rand::{thread_rng, Rng};
     use std::path::{Path, PathBuf};
-    use std::{fs, io};
+    use std::fs;
 
     let args: Vec<String> = std::env::args().collect();
     let silent = args.iter().any(|a| a == "--silent" || a == "/silent");
 
-    // Get name of the currently running bniary at runtime
-    let binary_name = PathBuf::from(
-        std::env::current_exe()
-            .unwrap()
-            .file_name()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .to_string(),
-    );
+    // Check if this is a TWI-bundled executable
+    if !bundler::is_bundled() {
+        return Err("This executable is not a valid TWI setup package.".to_string());
+    }
 
-    // Extract packages
-    let package = extract_package(&binary_name);
-    let manifest = &package.manifest;
+    // Extract manifest
+    let manifest = bundler::get_manifest();
     println!("Application: {}", manifest.name);
 
     // Handle bundled application
-    let app = Application::load(&package);
+    let app = Application::load();
     println!(
         "Application size: {}",
         format_bytes(app.data.len().try_into().unwrap())
     );
 
     // Handle bundled WebView2 runtime
-    let webview2 = WebView2::load(&package);
+    let webview2 = WebView2::load();
     println!("Webview2 bundled: {}", webview2.bundled);
 
     // Check if WebView2 runtime is installed
@@ -69,15 +69,17 @@ fn main() {
         println!("Installing webview2 runtime...");
         webview2
             .install(false, &PathBuf::new())
-            .expect("Failed to install webview2 runtime");
+            .map_err(|e| format!("Failed to install webview2 runtime: {}", e))?;
     }
 
     // Determine the installation directory
     println!("Determining install directory...");
-    let appdata = get_local_app_data().expect("Failed to get local app data path");
+    let appdata = get_local_app_data()
+        .map_err(|e| format!("Failed to get local app data path: {}", e))?;
     let root_path = Path::new(&appdata).join(&manifest.identifier);
     if !root_path.exists() {
-        fs::create_dir_all(&root_path).expect("Failed to create installation directory");
+        fs::create_dir_all(&root_path)
+            .map_err(|e| format!("Failed to create installation directory: {}", e))?;
     }
     let root_path_str = root_path.to_str().unwrap();
     println!("Installation Directory: {:?}", root_path_str);
@@ -99,8 +101,7 @@ fn main() {
                 if !silent {
                     show_error_dialog("Not enough disk space", &msg);
                 }
-                eprintln!("{}", msg);
-                std::process::exit(2);
+                return Err(msg);
             } else {
                 println!(
                     "There is {} free space available at destination, this package requires {}.",
@@ -121,7 +122,7 @@ fn main() {
 
         if !result {
             println!("User cancelled installation");
-            return;
+            return Ok(());
         }
         println!("User chose to overwrite existing installation.");
 
@@ -138,20 +139,20 @@ fn main() {
             root_path_renamed
         );
         fs::rename(&root_path, &root_path_renamed)
-            .expect("Failed to rename existing installation directory");
+            .map_err(|e| format!("Failed to rename existing installation directory: {}", e))?;
     }
 
     println!("Preparing and cleaning installation directory...");
     remove_dir_all_ext::ensure_empty_dir(&root_path)
-        .expect("Failed to clean installation directory");
+        .map_err(|e| format!("Failed to clean installation directory: {}", e))?;
 
     // Install the application
     let quiet = false;
     let install_result = app.install(quiet, &root_path);
 
     // Handle rollback if installation fails
-    if install_result.is_ok() == false {
-        println!("Installation failed! {}", install_result.unwrap_err());
+    if let Err(e) = install_result {
+        println!("Installation failed! {}", e);
         if !root_path_renamed.is_empty() {
             println!("Rolling back installation...");
             let _ = find_and_kill_processes_from_directory(root_path_str);
@@ -159,8 +160,7 @@ fn main() {
             let _ = fs::rename(&root_path_renamed, &root_path);
         }
 
-        // exit the installer with an error code
-        std::process::exit(1);
+        return Err(format!("Installation failed: {}", e));
     }
 
     println!("Installation completed successfully!");
@@ -171,7 +171,9 @@ fn main() {
 
     // Write the uninstall registry keys
     windows::write_uninstall_entry(&manifest, &root_path)
-        .expect("Failed to write uninstall registry key");
+        .map_err(|e| format!("Failed to write uninstall registry key: {}", e))?;
+
+    Ok(())
 }
 
 #[cfg(target_os = "windows")]

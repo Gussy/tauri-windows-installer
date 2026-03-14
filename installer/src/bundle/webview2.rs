@@ -1,7 +1,6 @@
 use crate::bundle::Bundle;
 
 use anyhow::{anyhow, Result};
-use bundler::SetupPackage;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
@@ -15,10 +14,10 @@ pub(crate) struct WebView2 {
 }
 
 impl Bundle for WebView2 {
-    fn load(package: &SetupPackage) -> Self {
-        let data = package.get_webview2();
+    fn load() -> Self {
+        let data = bundler::get_webview2_data();
         let bundled = data.is_some();
-        let exe = package.webview2_filename();
+        let exe = bundler::get_webview2_filename();
         let installed = Self::is_installed();
 
         Self {
