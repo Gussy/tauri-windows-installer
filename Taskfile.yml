@@ -2,7 +2,7 @@ version: "3"
 
 tasks:
   check:
-    desc: Check default crates compile (bundler-lib + bundler)
+    desc: Check default crates compile (core + bundler)
     cmds:
       - cargo check
 
@@ -22,7 +22,7 @@ tasks:
       - cargo test --workspace
 
   build:
-    desc: Build default crates (bundler-lib + bundler)
+    desc: Build default crates (core + bundler)
     cmds:
       - cargo build
 
@@ -64,7 +64,7 @@ tasks:
   vm:build-image:
     desc: Build Windows 11 ARM golden image with Packer
     cmds:
-      - cd packer && packer init . && packer build -force -var "iso_path={{.ISO_PATH}}" -var "virtio_iso_path={{.VIRTIO_ISO_PATH}}" .
+      - cd packer && packer init . && packer build -force -var "iso_path={{.ISO_PATH}}" .
 
   vm:snapshot:
     desc: Create clean baseline snapshot

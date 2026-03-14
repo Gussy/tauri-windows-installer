@@ -1,140 +1,123 @@
 # Tauri Windows Installer
 
-An [MVP](https://en.wikipedia.org/wiki/Minimum_viable_product) for a simple and modern "one click" windows installer for [Tauri apps](https://tauri.app/).
+A pure-Rust, zero-click Windows installer for [Tauri](https://tauri.app/) apps. Click the setup executable and the app installs to `%LOCALAPPDATA%`, launches immediately, and registers an uninstaller. No wizard, no options.
 
-This work is heavily inspired by [VeloPack](https://github.com/velopack/velopack) and uses many of the same concepts, however unlike VeloPack this work only handles the install and uninstall of Tauri applications, only on Windows, and has no support for any update mechanisms.
+Inspired by [VeloPack](https://github.com/velopack/velopack). Unlike VeloPack, this is Tauri-specific and has no update mechanism (Tauri has its own updater plugin).
 
-## Goals
+## How it works
 
-- Simple installer - _Small file size and code complexity_
-- Opinionated implementation - _Lack of features is the main feature_
-- One click installs - _No wizards, just install and launch the app immediately_
+The bundler embeds your built app into a setup executable as PE resources (via [libsui](https://github.com/nicolo-ribaudo/libsui)). The setup executable extracts, installs, and launches — all in one click.
 
-While this implementation is standalone and could be used with any Tauri projects, the end goal is to have this work (or something based on it) merged into the Tauri core as a built-in option for bundling on windows.
+```
+core/            Shared library — types, constants, and bundling API
+bundler/         CLI that creates setup executables
+installer/       The setup.exe stub (runs on end-user machines)
+uninstaller/     Library linked into your app for --uninstall handling
+```
 
-### Compatibility
-
-| Windows Version | 64-bit | 32-bit |
-|-----------------|--------|--------|
-| Windows 11 | ✅ | ❌ |
-| Windows 10 | ✅ | ❌ |
-| Windows 8 | ❌ | ❌ |
-| Windows 7 | ❌ | ❌ |
-
-#### WebView2
-
-Tauri apps on Windows require WebView2 which is [included with Windows 10](https://learn.microsoft.com/en-us/microsoft-365-apps/deploy/webview2-install#webview2-runtime-installation) _20H2_ and later versions.
-
-Windows 10 versions earlier than _20H2_, the [WebView2 Evergreen Bootstrapper](https://developer.microsoft.com/en-us/microsoft-edge/webview2/?form=MA13LH#download) (~1.6MB) can be bundled in to the setup executable. If WebView2 is not detected, if present the bootstrapper will be run, to streamline downloading and installation of WebView2 as part of the installation process. The offline installers (~155MB) could be included in the future if required.
-
-#### Architecture
-
-Only 64-bit Windows is supported and tested. Windows 11 only supports 64-bit and online market data reports suggest Windows 10 32-bit usage is under 1% of all Windows 10 installs.
-
-#### Earlier versions
-
-Windows 8 and earlier may work, but are not explicitly supported right now.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for details on the PE resource approach, bundle format, and programmatic API.
 
 ## Usage
 
-```ps
-# Build all libraries and setup.exe
+### CLI
+
+```sh
+# Build the installer stub (Windows) and bundler
 cargo build --release
-cp .\target\release\setup.exe .\bundler\
 
-# Install the bundler application
-cargo build --package twi_bundler --release
-cargo install --path bundler
-
-# Build the demo Tauri app
-cd .\demo-app\; pnpm tauri build; cd ..\
-
-# Bundle the demo app into an installer
-bundler.exe --tauri-conf '.\demo-app\src-tauri\tauri.conf.json' --app '.\target\release\demo-app.exe' --title 'Demo App'
+# Bundle a Tauri app into a setup executable
+bundler -c path/to/tauri.conf.json -a path/to/app.exe
 ```
 
-The output from the bundler should look similar to this:
+The bundler reads `tauri.conf.json` for product name, version, identifier, publisher, and icons. Output: `{name}-setup.exe`.
 
-```text
-Packaging Tauri application...
-  Loading config: .\demo-app\src-tauri\tauri.conf.json
-  Loaded setup executable: setup.exe (667.1 KB bytes)
-  Bundling the webview2 evergreen bootstrapper...
-  Downloading WebView2 Evergreen: https://go.microsoft.com/fwlink/p/?LinkId=2124703
-  Loaded WebView2 Evergreen: MicrosoftEdgeWebview2Setup.exe (1.6 MB bytes)
-  Loaded application executable: demo-app.exe (10.1 MB bytes)
-Packaging complete.
-Created demo-app-setup.exe (12.4 MB)
 ```
-
-## Components
-
-### Bundler `bundler.exe`
-
-```text
-Tauri Windows Installer Bundler
-
-Usage: bundler.exe --tauri-conf <TAURI_CONF> --app <APP>
-
 Options:
-  -t, --tauri-conf <TAURI_CONF>  Path to the Tauri configuration file
-  -a, --app <APP>                Path to application to bundle
-  -t, --title <TITLE>            Title of the bundled application
-  -h, --help                     Print help
-  -V, --version                  Print version
+  -c, --tauri-conf <PATH>     Path to tauri.conf.json
+  -a, --app <PATH>            Application executable or directory
+  -t, --title <TITLE>         App title (defaults to productName from config)
+      --main-exe <NAME>       Main exe name (required when --app is a directory)
+  -s, --sign-command <CMD>    Code signing command (file path appended as last arg)
+  -o, --output-dir <DIR>      Output directory (defaults to current directory)
 ```
 
-The bundler is used to construct a custom setup executable for installing the Tauri application on the host system.
-
-The base `setup.exe` file is included in the bundler with the rust `include_bytes!()`. The bundler then uses that built in binary as a base to append a setup manifest, webview2 installer (if required) and the application.
-
-### Installer
-
-The installer crate builds both a skeleton setup application (`setup.exe`) along with a library `tauri_windows_installer`:
-
-- The setup application is what's used by the bundler as a base for the final setup executable.
-- The library is used by the target Tauri app to add a `--uninstall` hook to the application, to handle uninstalling the app.
-
-#### Installation overview
-
-1. The bundled package is extracted, this contains a setup manifest and all the bundled files
-1. If WebView2 is not installed **and** the boostrapper is included, the boostrapper executable will be written to disk and spawned
-1. The installation directory is determined, defaulting to `%APPDATA%\{app-identifier}`
-1. If the installation directory doesn't exist, it's created, if it does exist and the target application executable exists inside, a dialog is shown prompting to overwrite or cancel the installation
-    1. When overwriting, the existing installation directory is moved to a temporary location
-1. The installation directory is emptied
-1. The application is installed. This copies the application to the installation directory and spawns it as a detached process
-1. If the previous step failed **and** an existing installation is being overwritten, a rollback occurs by renaming the temporary installation back to it's original name. The setup process then exits
-1. An uninstall entry is written to the the `HKEY_CURRENT_USER` registry, using `{productName}.exe --uninstall` as the uninstall command
-
-### Uninstaller
-
-The uninstaller is built into the main Tauri application, by calling a function from the `tauri_windows_installer` library. This adds a `--uninstall` argument handler to the Tauri application
+### As a library
 
 ```rust
-tauri_windows_installer::handle_uninstall(&"{app_title}", &"{app_id}");
+use twi_core::{bundle, BundleOptions};
+
+let output = bundle(BundleOptions {
+    setup_exe: std::fs::read("setup.exe")?,
+    name: "my-app".into(),
+    title: "My App".into(),
+    version: "1.0.0".into(),
+    identifier: "com.example.myapp".into(),
+    publisher: "Example Inc.".into(),
+    app: "target/release/my-app.exe".into(),
+    main_exe: None,
+    icon: None,
+    webview2: None,
+    sign_command: None,
+    output_dir: "dist".into(),
+    on_progress: Some(Box::new(|msg| println!("{msg}"))),
+})?;
 ```
 
-#### Uninstall overview
+Add to `Cargo.toml`: `twi_core = { version = "0.1", features = ["bundler"] }`
 
-1. Kill all running application processes
-1. Remove the installation directory (except for the application executable)
-1. Remove the entry from the `HKEY_CURRENT_USER` registry
-1. Show a dialog box with the result of the uninstall
-1. Spawn a separate process to delete the installation directory
+### Uninstall integration
 
-## TODO
+Link the uninstaller library into your Tauri app:
 
-- [ ] Bundler
-  - [ ] ~~Add `-s, --setup-version` arguments to print the currently built-in `setup.exe` version~~
-  - [x] Add an icon to the packaged `{productName}-setup.exe`
-  - [ ] Add other resource information like name, version, date etc to the `{productName}-setup.exe`
-  - [x] Get a human friendly application title from somewhere (cli argument?)
-- [ ] Installer
-  - [ ] Embed versioning into `setup.exe`
-  - [ ] Check the OS version and architecture
-  - [ ] Improve the required space calculation
-  - [ ] Get publisher from somewhere for uninstall registry entry
-- [x] Other
-  - [x] Setup GitHub Actions to build and release
-  - [ ] Investigate using [libsui](https://crates.io/crates/libsui) to replace custom bundling code
+```rust
+fn main() {
+    #[cfg(target_os = "windows")]
+    if twi_uninstaller::handle_uninstall() {
+        std::process::exit(0);
+    }
+    // ... normal app startup
+}
+```
+
+The installer registers `"app.exe" --uninstall` in the Windows registry. When triggered, it kills running processes, removes files, cleans up the registry, and deletes itself.
+
+## Features
+
+- Single-file setup executable (app + metadata + optional WebView2 bundled as PE resources)
+- Zstd-compressed tar bundle (supports single exe or full directory with sidecars)
+- PE version info (shows version/publisher in Windows file properties)
+- Code signing support (`--sign-command` or `signCommand` in tauri.conf.json)
+- WebView2 Evergreen bootstrapper bundling (auto-installs if not present)
+- Silent overwrite on reinstall with rollback on failure
+- Per-user install to `%LOCALAPPDATA%` (no admin required)
+
+## Compatibility
+
+| | 64-bit | 32-bit |
+|---|---|---|
+| Windows 11 | Supported | N/A |
+| Windows 10 | Supported | Not supported |
+
+WebView2 is included with Windows 10 20H2+. For earlier versions, the Evergreen bootstrapper (~1.6 MB) can be bundled.
+
+## Tauri integration
+
+**Short-term**: Use `beforeBundleCommand` in `tauri.conf.json` to run the bundler CLI after `tauri build`.
+
+**Long-term**: Call `twi_core::bundle()` directly from the Tauri bundler. The library has no Tauri dependency.
+
+## Development
+
+Develop on macOS, test on Windows. The workspace default members (`core` + `bundler`) compile on macOS. The `installer` and `uninstaller` are Windows-only.
+
+```sh
+cargo check          # Check core + bundler
+cargo test           # Run all tests
+cargo check -p twi_core --features bundler   # Check bundling API
+```
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the full development guide including VM-based e2e testing.
+
+## License
+
+MIT
