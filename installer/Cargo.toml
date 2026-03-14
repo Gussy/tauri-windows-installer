@@ -12,13 +12,14 @@ path = "src/main.rs"
 twi_bundler_lib.workspace = true
 anyhow.workspace = true
 remove_dir_all_ext.workspace = true
-winreg.workspace = true
-chrono = "0.4.38"
+chrono = "0.4.44"
 fs_extra = "1.3.0"
 rand = "0.8.5"
-sysinfo = "0.31.2"
+sysinfo = "0.38.4"
 tempdir = "0.3.7"
-toml = "0.8.19"
+
+[target.'cfg(windows)'.dependencies]
+winreg.workspace = true
 winapi = { version = "0.3.9", features = ["winuser", "libloaderapi"] }
 winsafe = { version = "0.0.22", features = ["gui"] }
 webview2-com = "0.32.0"
@@ -27,8 +28,8 @@ windows = { version = "0.58.0", features = [
     "Win32_Storage_FileSystem",
 ] }
 
-[build-dependencies]
-embed-manifest = "1.4.0"
+[target.'cfg(windows)'.build-dependencies]
+embed-manifest = "1.5.0"
 
 [package.metadata.embed-resource]
 name = "app.manifest"

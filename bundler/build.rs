@@ -6,18 +6,26 @@ const SETUP_EXE: &str = "setup.exe";
 const SETUP_MISSING_ERR: &str = "setup.exe not found in manifest directory, please build the setup project:\n  cargo build --package twi_installer";
 
 fn main() {
-    // Only 64-bit is supported
-    if env::var("CARGO_CFG_TARGET_ARCH").unwrap() != "x86_64" {
-        panic!("Only 64-bit targets are supported");
+    // Only 64-bit Windows targets are supported
+    if env::var_os("CARGO_CFG_WINDOWS").is_some()
+        && env::var("CARGO_CFG_TARGET_ARCH").unwrap() != "x86_64"
+    {
+        panic!("Only 64-bit Windows targets are supported");
+    }
+
+    let out_dir_str = env::var("OUT_DIR").expect("OUT_DIR environment variable not set");
+    let out_dir = PathBuf::from(&out_dir_str);
+
+    // On non-Windows, write a dummy setup.exe placeholder for development
+    if env::var_os("CARGO_CFG_WINDOWS").is_none() {
+        fs::write(out_dir.join(SETUP_EXE), b"").unwrap();
+        println!("cargo:rustc-env=SETUP_EXE={}", SETUP_EXE);
+        return;
     }
 
     // Get the manifest directory
     let manifest_dir_str = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is not set");
     let manifest_dir = PathBuf::from(manifest_dir_str);
-
-    // // Get current target build directories
-    let out_dir_str = env::var("OUT_DIR").expect("OUT_DIR environment variable not set");
-    let out_dir = PathBuf::from(&out_dir_str);
 
     // If debug build, copy the locally built setup.exe to the manifest directory
     let profile = env::var("PROFILE").expect("PROFILE environment variable not set");

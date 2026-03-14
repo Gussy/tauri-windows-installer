@@ -129,7 +129,7 @@ fn main() {
 }
 
 fn load_embedded_setup() -> Vec<u8> {
-    let setup_data = include_bytes!(concat!(env!("OUT_DIR"), "\\", env!("SETUP_EXE"))).to_vec();
+    let setup_data = include_bytes!(concat!(env!("OUT_DIR"), "/", env!("SETUP_EXE"))).to_vec();
 
     println!(
         "  Loaded setup executable: {} ({} bytes)",

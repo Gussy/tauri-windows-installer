@@ -1,8 +1,9 @@
-use embed_manifest::{embed_manifest, new_manifest};
-
 fn main() {
-    // Embed the app.manifest file
-    if std::env::var_os("CARGO_CFG_WINDOWS").is_some() {
+    // embed-manifest is only available as a build-dependency on Windows hosts
+    // (via [target.'cfg(windows)'.build-dependencies] in Cargo.toml)
+    #[cfg(windows)]
+    {
+        use embed_manifest::{embed_manifest, new_manifest};
         embed_manifest(new_manifest("app.manifest")).expect("unable to embed manifest file");
         println!("cargo:rerun-if-changed=app.manifest");
     }

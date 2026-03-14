@@ -12,6 +12,6 @@ path = "src/main.rs"
 [dependencies]
 twi_bundler_lib.workspace = true
 bytesize.workspace = true
-clap = { version = "4.5.13", features = ["derive"] }
-colored = "2.1.0"
+clap = { version = "4.6.0", features = ["derive"] }
+colored = "3.1.1"
 editpe = "0.1.0"

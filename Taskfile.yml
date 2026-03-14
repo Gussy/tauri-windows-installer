@@ -1,0 +1,57 @@
+version: "3"
+
+tasks:
+  check:
+    desc: Check default crates compile (bundler-lib + bundler)
+    cmds:
+      - cargo check
+
+  check-all:
+    desc: Check all workspace crates compile
+    cmds:
+      - cargo check --workspace
+
+  test:
+    desc: Run tests for default crates
+    cmds:
+      - cargo test
+
+  test-all:
+    desc: Run tests for all workspace crates
+    cmds:
+      - cargo test --workspace
+
+  build:
+    desc: Build default crates (bundler-lib + bundler)
+    cmds:
+      - cargo build
+
+  build-installer:
+    desc: Build the Windows installer (setup.exe) — Windows only
+    cmds:
+      - cargo build --package twi_installer
+
+  build-bundler:
+    desc: Build the bundler (requires setup.exe to exist)
+    cmds:
+      - cargo build --package twi_bundler
+
+  clippy:
+    desc: Run clippy on the workspace
+    cmds:
+      - cargo clippy --workspace
+
+  fmt:
+    desc: Format all code
+    cmds:
+      - cargo fmt --all
+
+  fmt-check:
+    desc: Check formatting
+    cmds:
+      - cargo fmt --all -- --check
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - cargo clean

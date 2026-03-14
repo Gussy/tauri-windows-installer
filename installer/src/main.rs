@@ -1,25 +1,37 @@
 // Prevent additional console window on Windows in release
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(target_os = "windows")]
 mod bundle;
+#[cfg(target_os = "windows")]
 mod dialogs;
+#[cfg(target_os = "windows")]
 mod process;
+#[cfg(target_os = "windows")]
 mod to_wide;
+#[cfg(target_os = "windows")]
 mod windows;
 
-use crate::bundle::Bundle;
-use crate::bundle::{Application, WebView2};
-use crate::dialogs::{show_error_dialog, show_overwrite_repair_dialog};
-use crate::process::find_and_kill_processes_from_directory;
-use crate::windows::{get_free_space, get_local_app_data};
-
-use bundler::extract_package;
-use rand::distributions::Alphanumeric;
-use rand::{thread_rng, Rng};
-use std::path::{Path, PathBuf};
-use std::{fs, io};
-
+#[cfg(not(target_os = "windows"))]
 fn main() {
+    eprintln!("This binary is Windows-only");
+    std::process::exit(1);
+}
+
+#[cfg(target_os = "windows")]
+fn main() {
+    use crate::bundle::Bundle;
+    use crate::bundle::{Application, WebView2};
+    use crate::dialogs::{show_error_dialog, show_overwrite_repair_dialog};
+    use crate::process::find_and_kill_processes_from_directory;
+    use crate::windows::{get_free_space, get_local_app_data};
+
+    use bundler::extract_package;
+    use rand::distributions::Alphanumeric;
+    use rand::{thread_rng, Rng};
+    use std::path::{Path, PathBuf};
+    use std::{fs, io};
+
     // Get name of the currently running bniary at runtime
     let binary_name = PathBuf::from(
         std::env::current_exe()
@@ -158,6 +170,7 @@ fn main() {
         .expect("Failed to write uninstall registry key");
 }
 
+#[cfg(target_os = "windows")]
 fn format_bytes(bytes: u64) -> String {
     let units = ["B", "KB", "MB", "GB", "TB", "PB", "EB"];
     let mut size = bytes as f64;
@@ -171,12 +184,16 @@ fn format_bytes(bytes: u64) -> String {
     format!("{:.2} {}", size, units[unit_index])
 }
 
-fn is_directory_empty(path: &Path) -> io::Result<bool> {
-    let mut entries = fs::read_dir(path)?;
+#[cfg(target_os = "windows")]
+fn is_directory_empty(path: &std::path::Path) -> std::io::Result<bool> {
+    let mut entries = std::fs::read_dir(path)?;
     Ok(entries.next().is_none())
 }
 
+#[cfg(target_os = "windows")]
 fn generate_random_string(length: usize) -> String {
+    use rand::distributions::Alphanumeric;
+    use rand::{thread_rng, Rng};
     let rng = thread_rng();
     rng.sample_iter(&Alphanumeric)
         .take(length)
