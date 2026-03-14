@@ -16,6 +16,7 @@ libsui.workspace = true
 serde.workspace = true
 bytesize.workspace = true
 tar.workspace = true
+zstd.workspace = true
 editpe.workspace = true
 indexmap = "2.1"
 clap = { version = "4.6.0", features = ["derive"] }

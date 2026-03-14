@@ -92,10 +92,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ).into());
         }
 
-        let bundle = create_tar_from_directory(app_path)?;
+        let tar_data = create_tar_from_directory(app_path)?;
+        let bundle = compress_bundle(&tar_data)?;
         println!(
-            "  Bundled directory: {} ({}, main exe: {})",
+            "  Bundled directory: {} ({} -> {}, main exe: {})",
             args.app,
+            ByteSize(tar_data.len() as u64),
             ByteSize(bundle.len() as u64),
             main_exe
         );
@@ -107,11 +109,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .to_str()
             .unwrap()
             .to_string();
-        let bundle = create_tar_from_file(app_path, &exe_name)?;
+        let tar_data = create_tar_from_file(app_path, &exe_name)?;
+        let bundle = compress_bundle(&tar_data)?;
         println!(
-            "  Bundled application: {} ({})",
+            "  Bundled application: {} ({} -> {})",
             exe_name,
-            ByteSize(bundle.len() as u64)
+            ByteSize(tar_data.len() as u64),
+            ByteSize(bundle.len() as u64),
         );
         (bundle, exe_name)
     };
@@ -181,6 +185,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     Ok(())
+}
+
+fn compress_bundle(data: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    // zstd level 19 — high compression, only runs once at build time
+    Ok(zstd::encode_all(data, 19)?)
 }
 
 fn create_tar_from_file(

@@ -169,12 +169,18 @@ fn run_installer() -> Result<(), String> {
 }
 
 #[cfg(target_os = "windows")]
-fn extract_bundle(data: &[u8], install_dir: &std::path::Path) -> Result<(), String> {
-    use std::io::Cursor;
+fn extract_bundle(compressed_data: &[u8], install_dir: &std::path::Path) -> Result<(), String> {
+    use std::io::{Cursor, Read};
+
+    println!("Decompressing bundle...");
+    let mut tar_data = Vec::new();
+    ruzstd::streaming_decoder::StreamingDecoder::new(Cursor::new(compressed_data))
+        .map_err(|e| format!("Failed to initialize decompressor: {}", e))?
+        .read_to_end(&mut tar_data)
+        .map_err(|e| format!("Failed to decompress bundle: {}", e))?;
 
     println!("Extracting bundle to installation directory...");
-    let cursor = Cursor::new(data);
-    let mut archive = tar::Archive::new(cursor);
+    let mut archive = tar::Archive::new(Cursor::new(tar_data));
     archive
         .unpack(install_dir)
         .map_err(|e| format!("Failed to extract bundle: {}", e))?;
