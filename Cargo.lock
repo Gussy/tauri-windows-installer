@@ -4884,19 +4884,13 @@ dependencies = [
  "clap",
  "colored",
  "dirs-next",
- "editpe",
- "indexmap 2.13.0",
- "libsui",
  "mockito",
  "reqwest",
  "serde",
  "serde_json",
- "shell-words",
- "tar",
  "tauri",
  "tempfile",
  "twi_bundler_lib",
- "zstd",
 ]
 
 [[package]]
@@ -4904,9 +4898,15 @@ name = "twi_bundler_lib"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "editpe",
+ "indexmap 2.13.0",
  "libsui",
  "serde",
  "serde_json",
+ "shell-words",
+ "tar",
+ "tempfile",
+ "zstd",
 ]
 
 [[package]]

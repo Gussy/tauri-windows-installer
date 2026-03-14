@@ -1,13 +1,28 @@
+//! Setup manifest and install metadata types.
+//!
+//! These types are shared between the bundler (which writes them) and the
+//! installer/uninstaller (which reads them).
+
 use serde::{Deserialize, Serialize};
 
-/// Manifest describing the setup package contents
+/// Manifest describing the setup package contents.
+///
+/// Serialized to bincode and embedded as a PE resource in the setup executable.
+/// The installer reads this at runtime to determine product name, version,
+/// install paths, etc.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct SetupManifest {
+    /// Product name used for directory names and filenames.
     pub name: String,
+    /// Human-readable application title shown in the installer UI.
     pub title: String,
+    /// Semantic version string (e.g. `"1.2.3"`).
     pub version: String,
+    /// Reverse-domain identifier (e.g. `"com.example.myapp"`).
     pub identifier: String,
+    /// Main executable filename (e.g. `"my-app.exe"`).
     pub application: String,
+    /// Publisher name shown in Windows "Add/Remove Programs".
     pub publisher: String,
 }
 
@@ -23,12 +38,19 @@ impl SetupManifest {
     }
 }
 
-/// Metadata written to disk during install, read by uninstall at runtime
+/// Metadata written to disk during installation, read by the uninstaller.
+///
+/// Stored as JSON at [`INSTALL_METADATA_FILENAME`](crate::INSTALL_METADATA_FILENAME)
+/// in the application's install directory.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct InstallMetadata {
+    /// Human-readable application title.
     pub app_title: String,
+    /// Reverse-domain application identifier.
     pub app_id: String,
+    /// Main executable filename.
     pub app_exe: String,
+    /// Installed version string.
     pub version: String,
 }
 

@@ -1,6 +1,12 @@
 pub mod manifest;
 
+#[cfg(feature = "bundler")]
+pub mod bundle;
+
 pub use manifest::{InstallMetadata, SetupManifest};
+
+#[cfg(feature = "bundler")]
+pub use bundle::{bundle, BundleError, BundleOptions, BundleOutput, WebView2Embedding};
 
 /// Resource name used as a marker to identify TWI-bundled executables
 pub const TWI_RESOURCE: &str = "TWI_RESOURCE";
