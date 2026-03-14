@@ -1,12 +1,12 @@
 mod plugin_config;
 mod webview2;
 
-use twi_core::{BundleOptions, WebView2Embedding};
 use bytesize::ByteSize;
 use clap::Parser;
 use colored::*;
 use plugin_config::{load_tauri_config, Webview2Bundle};
 use std::{env, path::Path, path::PathBuf};
+use twi_core::{BundleOptions, WebView2Embedding};
 use webview2::{download_webview2_evergreen, WEBVIEW2_EVERGREEN_EXE};
 
 /// Tauri Windows Installer Bundler
@@ -68,10 +68,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         setup_exe: load_embedded_setup(),
         name: tauri_conf.product_name.clone().unwrap_or_default(),
         title,
-        version: tauri_conf
-            .version
-            .clone()
-            .unwrap_or_else(|| "0.0.0".into()),
+        version: tauri_conf.version.clone().unwrap_or_else(|| "0.0.0".into()),
         identifier: tauri_conf.identifier.clone(),
         publisher: tauri_conf.bundle.publisher.clone().unwrap_or_default(),
         app: PathBuf::from(&args.app),
@@ -128,7 +125,8 @@ fn resolve_webview2(
                 "  {}",
                 "Bundling the webview2 evergreen bootstrapper...".green()
             );
-            let data = download_webview2_evergreen();
+            let data =
+                download_webview2_evergreen().expect("Failed to download WebView2 bootstrapper");
             Some(WebView2Embedding {
                 data,
                 filename: WEBVIEW2_EVERGREEN_EXE.to_string(),
@@ -199,4 +197,35 @@ fn load_embedded_setup() -> Vec<u8> {
     );
 
     setup_data
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_strip_percent1_placeholder_removes() {
+        assert_eq!(
+            strip_percent1_placeholder("signtool sign %1 /fd SHA256"),
+            "signtool sign  /fd SHA256"
+        );
+    }
+
+    #[test]
+    fn test_strip_percent1_placeholder_standalone() {
+        assert_eq!(strip_percent1_placeholder("%1"), "");
+    }
+
+    #[test]
+    fn test_strip_percent1_placeholder_no_placeholder() {
+        assert_eq!(
+            strip_percent1_placeholder("signtool sign /fd SHA256"),
+            "signtool sign /fd SHA256"
+        );
+    }
+
+    #[test]
+    fn test_strip_percent1_placeholder_empty() {
+        assert_eq!(strip_percent1_placeholder(""), "");
+    }
 }

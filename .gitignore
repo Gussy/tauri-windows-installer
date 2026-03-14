@@ -1,3 +1,10 @@
 .hermit/
 /target/
 /packer/output/
+dist/
+.DS_Store
+*.swp
+*.swo
+*~
+.idea/
+*.iml

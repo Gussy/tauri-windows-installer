@@ -12,8 +12,7 @@ mod windows_impl {
 
     use twi_core::{InstallMetadata, INSTALL_METADATA_FILENAME};
 
-    const UNINSTALL_STR: &'static str =
-        "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
+    const UNINSTALL_STR: &'static str = "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
 
     /// Returns `true` if `--uninstall` was handled (caller should exit),
     /// `false` if the flag was not present (app continues normally).
@@ -45,7 +44,10 @@ mod windows_impl {
                 }
             },
             Err(e) => {
-                eprintln!("Failed to read install metadata from {:?}: {}", meta_path, e);
+                eprintln!(
+                    "Failed to read install metadata from {:?}: {}",
+                    meta_path, e
+                );
                 return 1;
             }
         };

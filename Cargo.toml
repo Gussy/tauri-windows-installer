@@ -11,6 +11,11 @@ package.version = "0.1.0"
 package.edition = "2021"
 package.authors = ["@Gussy"]
 package.license = "MIT"
+package.repository = "https://github.com/Gussy/tauri-windows-installer"
+package.homepage = "https://github.com/Gussy/tauri-windows-installer"
+package.description = "Pure-Rust, zero-click Windows installer for Tauri apps"
+package.keywords = ["tauri", "installer", "windows", "bundler"]
+package.categories = ["development-tools"]
 
 # "demo-app/src-tauri" has its own Tauri build requirements,
 # "installer" and "uninstaller" are Windows-only,

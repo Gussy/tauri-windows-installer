@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 pub mod manifest;
 
 #[cfg(feature = "bundler")]
@@ -32,10 +34,7 @@ pub const INSTALL_METADATA_FILENAME: &str = ".twi-meta.json";
 /// Check if the current executable is a TWI-bundled setup
 #[cfg(target_os = "windows")]
 pub fn is_bundled() -> bool {
-    libsui::find_section(TWI_RESOURCE)
-        .ok()
-        .flatten()
-        .is_some()
+    libsui::find_section(TWI_RESOURCE).ok().flatten().is_some()
 }
 
 /// Extract the setup manifest from the current executable

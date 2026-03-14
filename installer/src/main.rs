@@ -60,8 +60,8 @@ fn run_installer() -> Result<(), String> {
 
     // Determine the installation directory
     println!("Determining install directory...");
-    let appdata = get_local_app_data()
-        .map_err(|e| format!("Failed to get local app data path: {}", e))?;
+    let appdata =
+        get_local_app_data().map_err(|e| format!("Failed to get local app data path: {}", e))?;
     let root_path = Path::new(&appdata).join(&manifest.identifier);
     if !root_path.exists() {
         fs::create_dir_all(&root_path)
@@ -156,7 +156,8 @@ fn run_installer() -> Result<(), String> {
     let meta_path = root_path.join(twi_core::INSTALL_METADATA_FILENAME);
     fs::write(
         &meta_path,
-        serde_json::to_string_pretty(&metadata).map_err(|e| format!("Failed to serialize metadata: {}", e))?,
+        serde_json::to_string_pretty(&metadata)
+            .map_err(|e| format!("Failed to serialize metadata: {}", e))?,
     )
     .map_err(|e| format!("Failed to write install metadata: {}", e))?;
 

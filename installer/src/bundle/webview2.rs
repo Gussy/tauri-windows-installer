@@ -29,6 +29,8 @@ impl WebView2 {
         use webview2_com::{Microsoft::Web::WebView2::Win32::*, *};
         use windows::core::{PCWSTR, PWSTR};
         let mut versioninfo = PWSTR::null();
+        // SAFETY: GetAvailableCoreWebView2BrowserVersionString accepts null for the
+        // browser path (uses default) and writes to the provided PWSTR pointer.
         let result = unsafe {
             GetAvailableCoreWebView2BrowserVersionString(PCWSTR::null(), &mut versioninfo)
         };

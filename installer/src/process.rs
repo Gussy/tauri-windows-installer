@@ -56,6 +56,8 @@ pub fn spawn_detached_process(exe_path: PathBuf) -> Result<()> {
     let child = exe_launch
         .spawn()
         .map_err(|z| anyhow!("Failed to start application ({}).", z))?;
+    // SAFETY: child.id() returns a valid process ID from a just-spawned process.
+    // AllowSetForegroundWindow is safe to call with any DWORD process ID.
     let _ = unsafe { AllowSetForegroundWindow(child.id()) };
 
     Ok(())

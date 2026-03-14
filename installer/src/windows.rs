@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use ::windows::core::PCWSTR;
 use anyhow::{anyhow, Result};
-use twi_core::SetupManifest;
 use chrono::prelude::*;
+use twi_core::SetupManifest;
 use windows::{
     core::{GUID, PWSTR},
     Win32::Storage::FileSystem::GetDiskFreeSpaceExW,
@@ -19,6 +19,9 @@ pub fn get_local_app_data() -> Result<String> {
 }
 
 fn get_known_folder(folder_id: *const GUID) -> Result<String> {
+    // SAFETY: SHGetKnownFolderPath is a well-defined Win32 API. The folder_id pointer
+    // comes from a Windows SDK constant (FOLDERID_*). The returned PWSTR is valid
+    // until we convert it to a Rust String.
     unsafe {
         let flag = windows::Win32::UI::Shell::KNOWN_FOLDER_FLAG(0);
         let result =
@@ -28,6 +31,8 @@ fn get_known_folder(folder_id: *const GUID) -> Result<String> {
 }
 
 fn pwstr_to_string(input: PWSTR) -> Result<String> {
+    // SAFETY: The PWSTR comes from a successful Win32 API call that guarantees
+    // a valid null-terminated UTF-16 string. to_hstring reads until the null terminator.
     unsafe {
         let hstring = input.to_hstring()?;
         let string = hstring.to_string_lossy();
@@ -82,6 +87,8 @@ pub fn get_free_space(root_path_str: &str) -> Result<u64> {
     let root_pcwstr = string_to_u16(root_path_str);
     let root_pcwstr: PCWSTR = PCWSTR(root_pcwstr.as_ptr());
 
+    // SAFETY: root_pcwstr is a valid null-terminated UTF-16 string created from
+    // string_to_u16. free_space is a valid mutable reference to a stack-allocated u64.
     let result = unsafe { GetDiskFreeSpaceExW(root_pcwstr, None, None, Some(&mut free_space)) };
 
     if result.is_err() {

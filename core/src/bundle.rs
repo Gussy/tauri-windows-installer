@@ -32,8 +32,7 @@
 
 use crate::manifest::SetupManifest;
 use crate::{
-    BUNDLE_RESOURCE, MANIFEST_RESOURCE, TWI_RESOURCE, WEBVIEW2_RESOURCE,
-    WEBVIEW2_RESOURCE_FILENAME,
+    BUNDLE_RESOURCE, MANIFEST_RESOURCE, TWI_RESOURCE, WEBVIEW2_RESOURCE, WEBVIEW2_RESOURCE_FILENAME,
 };
 use std::path::{Path, PathBuf};
 use std::{fs, process::Command};
@@ -66,6 +65,7 @@ pub struct BundleOptions {
     /// Directory where the output `{name}-setup.exe` will be written.
     pub output_dir: PathBuf,
     /// Optional callback invoked with progress messages.
+    #[allow(clippy::type_complexity)]
     pub on_progress: Option<Box<dyn Fn(&str)>>,
 }
 
@@ -165,9 +165,7 @@ pub fn bundle(options: BundleOptions) -> Result<BundleOutput, BundleError> {
     let app_path = &options.app;
     let (bundle_data, main_exe_name) = if app_path.is_dir() {
         let main_exe = options.main_exe.as_deref().ok_or_else(|| {
-            BundleError::Validation(
-                "--main-exe is required when --app is a directory".to_string(),
-            )
+            BundleError::Validation("--main-exe is required when --app is a directory".to_string())
         })?;
 
         // Verify the main exe exists in the directory
@@ -243,10 +241,7 @@ pub fn bundle(options: BundleOptions) -> Result<BundleOutput, BundleError> {
             .write_resource(WEBVIEW2_RESOURCE, wv2.data)
             .map_err(|e| BundleError::Pe(e.to_string()))?;
         setup_pe = setup_pe
-            .write_resource(
-                WEBVIEW2_RESOURCE_FILENAME,
-                wv2.filename.into_bytes(),
-            )
+            .write_resource(WEBVIEW2_RESOURCE_FILENAME, wv2.filename.into_bytes())
             .map_err(|e| BundleError::Pe(e.to_string()))?;
     }
 
@@ -501,5 +496,69 @@ mod tests {
 
         let decompressed = zstd::decode_all(compressed.as_slice()).unwrap();
         assert_eq!(decompressed, original);
+    }
+
+    #[test]
+    fn test_bundle_error_display() {
+        let io_err = BundleError::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "gone"));
+        assert!(io_err.to_string().contains("I/O error"));
+
+        assert_eq!(
+            BundleError::Pe("bad pe".into()).to_string(),
+            "PE error: bad pe"
+        );
+        assert_eq!(
+            BundleError::Tar("bad tar".into()).to_string(),
+            "Tar error: bad tar"
+        );
+        assert_eq!(
+            BundleError::Compress("bad zstd".into()).to_string(),
+            "Compression error: bad zstd"
+        );
+        assert_eq!(
+            BundleError::Sign("no cert".into()).to_string(),
+            "Signing error: no cert"
+        );
+        assert_eq!(
+            BundleError::Validation("missing field".into()).to_string(),
+            "Validation error: missing field"
+        );
+    }
+
+    #[test]
+    fn test_bundle_error_from_io() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied");
+        let bundle_err: BundleError = io_err.into();
+        assert!(matches!(bundle_err, BundleError::Io(_)));
+        assert!(bundle_err.to_string().contains("denied"));
+    }
+
+    #[test]
+    fn test_bundle_rejects_empty_setup_exe() {
+        let dir = tempfile::tempdir().unwrap();
+        let options = BundleOptions {
+            setup_exe: vec![],
+            name: "test".into(),
+            title: "Test".into(),
+            version: "1.0.0".into(),
+            identifier: "com.test".into(),
+            publisher: "Test".into(),
+            app: dir.path().join("app.exe"),
+            main_exe: None,
+            icon: None,
+            webview2: None,
+            sign_command: None,
+            output_dir: dir.path().join("out"),
+            on_progress: None,
+        };
+
+        let result = bundle(options);
+        assert!(result.is_err(), "bundle() should fail with empty setup_exe");
+    }
+
+    #[test]
+    fn test_create_tar_from_file_nonexistent() {
+        let result = create_tar_from_file(Path::new("/nonexistent/path.exe"), "path.exe");
+        assert!(matches!(result, Err(BundleError::Io(_))));
     }
 }
