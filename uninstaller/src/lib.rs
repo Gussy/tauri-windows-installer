@@ -86,9 +86,26 @@ mod windows_impl {
             println!("Uninstall completed successfully!");
         }
 
-        // Delete the executable and its parent directory
-        register_intent_to_delete_self(3, &root_path)
-            .expect("Failed to register intent to delete self");
+        // Rename the install directory to a unique temp name so the cleanup
+        // script can't collide with a reinstall at the original path.
+        // Windows allows renaming a directory that contains a running exe.
+        let exe_name = current_exe.file_name().unwrap().to_string_lossy().to_string();
+        let temp_dir_name = format!(
+            "{}_uninstalling_{}",
+            root_path.file_name().unwrap().to_string_lossy(),
+            std::process::id()
+        );
+        let temp_path = root_path.parent().unwrap().join(&temp_dir_name);
+        if let Ok(()) = fs::rename(&root_path, &temp_path) {
+            println!("Renamed install directory to: {}", temp_path.display());
+            if let Err(e) = register_intent_to_delete_self(3, &exe_name, &temp_path) {
+                eprintln!("Failed to register intent to delete self: {}", e);
+                errors = true;
+            }
+        } else {
+            eprintln!("Failed to rename install directory, skipping self-deletion");
+            errors = true;
+        }
 
         errors as i32
     }
@@ -164,14 +181,17 @@ mod windows_impl {
 
     pub(crate) fn register_intent_to_delete_self(
         delay_seconds: usize,
+        exe_name: &str,
         current_directory: &Path,
     ) -> Result<()> {
         println!("Deleting self...");
-        let current_exe = env::current_exe()?.to_string_lossy().to_string();
+        let exe_path = current_directory.join(exe_name).to_string_lossy().to_string();
         let dir_name = current_directory.file_name().unwrap().to_string_lossy();
 
-        // Retry loop: wait, attempt delete, check if still exists, repeat up to 5 times
-        // This handles cases where the OS holds a brief lock on the exe after process exit
+        // Retry loop: wait, attempt delete, check if still exists, repeat up to 5 times.
+        // This handles cases where the OS holds a brief lock on the exe after process exit.
+        // The directory is renamed to a unique temp name before this script runs, so it
+        // cannot collide with a fresh installation at the original path.
         let command = format!(
             "for /L %i in (1,1,5) do (\
                 choice /C Y /N /D Y /T {delay} & \
@@ -181,7 +201,7 @@ mod windows_impl {
                 )\
             )",
             delay = delay_seconds,
-            exe = current_exe,
+            exe = exe_path,
             dir = dir_name,
         );
         println!("Running: cmd.exe /C {}", command);

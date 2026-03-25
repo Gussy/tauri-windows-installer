@@ -27,24 +27,17 @@ fn main() {
     let manifest_dir_str = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is not set");
     let manifest_dir = PathBuf::from(manifest_dir_str);
 
-    // If debug build, copy the locally built setup.exe to the manifest directory
+    // Copy the locally built setup.exe to the manifest directory
     let profile = env::var("PROFILE").expect("PROFILE environment variable not set");
-    if profile == "debug" {
-        let target_dir = out_dir
-            .ancestors()
-            .nth(4) // Navigate up 4 levels
-            .expect("Failed to get target directory")
-            .join(&profile);
+    let target_dir = out_dir
+        .ancestors()
+        .nth(4) // Navigate up 4 levels
+        .expect("Failed to get target directory")
+        .join(&profile);
 
-        let setup_source_path = target_dir.join(SETUP_EXE);
-        let setup_dest_path = manifest_dir.join(SETUP_EXE);
-        if !setup_source_path.exists() {
-            panic!("{}", SETUP_MISSING_ERR);
-        }
-
-        if setup_dest_path.exists() {
-            fs::remove_file(&setup_dest_path).expect("Failed to remove existing setup.exe");
-        }
+    let setup_source_path = target_dir.join(SETUP_EXE);
+    let setup_dest_path = manifest_dir.join(SETUP_EXE);
+    if setup_source_path.exists() {
         fs::copy(&setup_source_path, &setup_dest_path).expect("Failed to copy setup.exe");
         println!("cargo:rerun-if-changed={}", setup_dest_path.display());
     }
