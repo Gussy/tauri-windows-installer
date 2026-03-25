@@ -219,12 +219,12 @@ pub fn bundle(options: BundleOptions) -> Result<BundleOutput, BundleError> {
         publisher: options.publisher.clone(),
     };
 
-    // Write bundle data as a PE resource
+    // Write PE resources in alphabetical order — Windows FindResource uses
+    // binary search on resource names, so unsorted entries won't be found.
     setup_pe = setup_pe
         .write_resource(BUNDLE_RESOURCE, bundle_data)
         .map_err(|e| BundleError::Pe(e.to_string()))?;
 
-    // Write manifest as a PE resource
     setup_pe = setup_pe
         .write_resource(
             MANIFEST_RESOURCE,
@@ -234,7 +234,11 @@ pub fn bundle(options: BundleOptions) -> Result<BundleOutput, BundleError> {
         )
         .map_err(|e| BundleError::Pe(e.to_string()))?;
 
-    // Handle WebView2 embedding
+    // TWI marker resource (must come before WEBVIEW2 alphabetically)
+    setup_pe = setup_pe
+        .write_resource(TWI_RESOURCE, TWI_RESOURCE.as_bytes().to_vec())
+        .map_err(|e| BundleError::Pe(e.to_string()))?;
+
     if let Some(wv2) = options.webview2 {
         progress("Embedding WebView2 installer...");
         setup_pe = setup_pe
@@ -244,11 +248,6 @@ pub fn bundle(options: BundleOptions) -> Result<BundleOutput, BundleError> {
             .write_resource(WEBVIEW2_RESOURCE_FILENAME, wv2.filename.into_bytes())
             .map_err(|e| BundleError::Pe(e.to_string()))?;
     }
-
-    // Write the TWI marker resource
-    setup_pe = setup_pe
-        .write_resource(TWI_RESOURCE, TWI_RESOURCE.as_bytes().to_vec())
-        .map_err(|e| BundleError::Pe(e.to_string()))?;
 
     // Build the output executable
     let output_filename = format!("{}-setup.exe", options.name);
@@ -260,9 +259,11 @@ pub fn bundle(options: BundleOptions) -> Result<BundleOutput, BundleError> {
         .map_err(|e| BundleError::Pe(e.to_string()))?;
     drop(output_file);
 
-    // Embed PE version info resources
-    set_version_info(&output_path, &manifest)?;
-    progress(&format!("Set version info: {}", manifest.version));
+    // TODO: set_version_info is disabled — editpe's set_resource_directory
+    // corrupts icon resources that libsui wrote, causing Windows Explorer to
+    // not display the icon. Need to find an alternative for PE version info.
+    // set_version_info(&output_path, &manifest)?;
+    // progress(&format!("Set version info: {}", manifest.version));
 
     // Sign the output executable if a sign command is provided
     if let Some(ref sign_cmd) = options.sign_command {
@@ -310,6 +311,7 @@ fn create_tar_from_directory(dir_path: &Path) -> Result<Vec<u8>, BundleError> {
         .map_err(|e| BundleError::Tar(e.to_string()))
 }
 
+#[allow(dead_code)] // TODO: temporarily disabled, see bundle() for details
 fn set_version_info(output_path: &Path, manifest: &SetupManifest) -> Result<(), BundleError> {
     use editpe::types::FixedFileInfo;
     use editpe::Image;
@@ -346,6 +348,7 @@ fn set_version_info(output_path: &Path, manifest: &SetupManifest) -> Result<(), 
     resources
         .set_version_info(&version_info)
         .map_err(|e| BundleError::Pe(format!("Failed to set version info: {}", e)))?;
+
     image
         .set_resource_directory(resources)
         .map_err(|e| BundleError::Pe(format!("Failed to set resource directory: {}", e)))?;
@@ -355,6 +358,7 @@ fn set_version_info(output_path: &Path, manifest: &SetupManifest) -> Result<(), 
     Ok(())
 }
 
+#[allow(dead_code)] // used by set_version_info
 fn parse_version_u32(version_str: &str) -> editpe::types::VersionU32 {
     let parts: Vec<u16> = version_str
         .split('.')

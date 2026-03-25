@@ -17,13 +17,37 @@ uninstaller/     Library linked into your app for --uninstall handling
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for details on the PE resource approach, bundle format, and programmatic API.
 
+## Prerequisites
+
+Install the following before building:
+
+1. **Rust** — Install via [rustup](https://rustup.rs/). Download and run `rustup-init.exe`, then restart your terminal.
+2. **Node.js** — Install the LTS version from [nodejs.org](https://nodejs.org/).
+3. **pnpm** — After installing Node.js, run:
+   ```sh
+   npm install -g pnpm
+   ```
+
+Verify everything is installed:
+```sh
+cargo --version
+node --version
+pnpm --version
+```
+
 ## Usage
 
 ### CLI
 
 ```sh
-# Build the installer stub (Windows) and bundler
-cargo build --release
+# Build the installer stub first (required before building the bundler)
+cargo build --package twi_installer --release
+
+# Copy setup.exe to the bundler directory (required for release builds)
+cp target/release/setup.exe bundler/setup.exe
+
+# Build the bundler (embeds the installer's setup.exe at compile time)
+cargo build --package twi_bundler --release
 
 # Bundle a Tauri app into a setup executable
 bundler -c path/to/tauri.conf.json -a path/to/app.exe
@@ -105,6 +129,28 @@ WebView2 is included with Windows 10 20H2+. For earlier versions, the Evergreen 
 **Short-term**: Use `beforeBundleCommand` in `tauri.conf.json` to run the bundler CLI after `tauri build`.
 
 **Long-term**: Call `twi_core::bundle()` directly from the Tauri bundler. The library has no Tauri dependency.
+
+## Demo app
+
+The included demo app lets you test the full build-and-install flow.
+
+```sh
+# 1. Build the installer and bundler (if you haven't already)
+cargo build --package twi_installer --release
+cp target/release/setup.exe bundler/setup.exe
+cargo build --package twi_bundler --release
+
+# 2. Build the demo Tauri app
+cd demo-app
+pnpm install
+pnpm tauri build
+cd ..
+
+# 3. Bundle it into a setup executable
+./target/release/bundler -c demo-app/src-tauri/tauri.conf.json -a target/release/demo-app.exe
+```
+
+This produces `demo-app-setup.exe` which you can run to test installation.
 
 ## Development
 
