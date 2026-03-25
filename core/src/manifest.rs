@@ -24,6 +24,8 @@ pub struct SetupManifest {
     pub application: String,
     /// Publisher name shown in Windows "Add/Remove Programs".
     pub publisher: String,
+    /// Whether to create a desktop shortcut during installation.
+    pub desktop_shortcut: bool,
 }
 
 impl SetupManifest {
@@ -52,6 +54,8 @@ pub struct InstallMetadata {
     pub app_exe: String,
     /// Installed version string.
     pub version: String,
+    /// Whether a desktop shortcut was created during installation.
+    pub desktop_shortcut: bool,
 }
 
 #[cfg(test)]
@@ -67,6 +71,7 @@ mod tests {
             identifier: "com.example.testapp".to_string(),
             application: "testapp.exe".to_string(),
             publisher: "Example Inc.".to_string(),
+            desktop_shortcut: true,
         };
 
         let binary = manifest.to_binary().expect("Failed to serialize manifest");
@@ -85,6 +90,7 @@ mod tests {
             identifier: "com.example.myapp".to_string(),
             application: "myapp.exe".to_string(),
             publisher: "My Publisher".to_string(),
+            desktop_shortcut: true,
         };
 
         let binary = manifest.to_binary().unwrap();
@@ -96,6 +102,7 @@ mod tests {
         assert_eq!(result.identifier, "com.example.myapp");
         assert_eq!(result.application, "myapp.exe");
         assert_eq!(result.publisher, "My Publisher");
+        assert_eq!(result.desktop_shortcut, true);
     }
 
     #[test]
@@ -107,6 +114,7 @@ mod tests {
             identifier: String::new(),
             application: String::new(),
             publisher: String::new(),
+            desktop_shortcut: false,
         };
 
         let binary = manifest.to_binary().unwrap();
@@ -127,6 +135,7 @@ mod tests {
             app_id: "com.example.myapp".to_string(),
             app_exe: "myapp.exe".to_string(),
             version: "1.0.0".to_string(),
+            desktop_shortcut: true,
         };
 
         let json = serde_json::to_string_pretty(&metadata).unwrap();

@@ -23,6 +23,7 @@
 //!     webview2: None,
 //!     sign_command: None,
 //!     output_dir: PathBuf::from("dist"),
+//!     desktop_shortcut: true,
 //!     on_progress: None,
 //! };
 //!
@@ -64,6 +65,8 @@ pub struct BundleOptions {
     pub sign_command: Option<String>,
     /// Directory where the output `{name}-setup.exe` will be written.
     pub output_dir: PathBuf,
+    /// Whether to create a desktop shortcut during installation.
+    pub desktop_shortcut: bool,
     /// Optional callback invoked with progress messages.
     #[allow(clippy::type_complexity)]
     pub on_progress: Option<Box<dyn Fn(&str)>>,
@@ -217,6 +220,7 @@ pub fn bundle(options: BundleOptions) -> Result<BundleOutput, BundleError> {
         identifier: options.identifier.clone(),
         application: main_exe_name,
         publisher: options.publisher.clone(),
+        desktop_shortcut: options.desktop_shortcut,
     };
 
     // Write PE resources in alphabetical order — Windows FindResource uses
@@ -553,6 +557,7 @@ mod tests {
             webview2: None,
             sign_command: None,
             output_dir: dir.path().join("out"),
+            desktop_shortcut: true,
             on_progress: None,
         };
 

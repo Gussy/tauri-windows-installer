@@ -64,6 +64,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let webview2 = resolve_webview2(&plugin_config);
     let sign_command = resolve_sign_command(&args, &plugin_config, &tauri_conf);
 
+    let desktop_shortcut = plugin_config.desktop_shortcut.unwrap_or(true);
+
     let options = BundleOptions {
         setup_exe: load_embedded_setup(),
         name: tauri_conf.product_name.clone().unwrap_or_default(),
@@ -76,6 +78,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         icon,
         webview2,
         sign_command,
+        desktop_shortcut,
         output_dir: args
             .output_dir
             .map(PathBuf::from)

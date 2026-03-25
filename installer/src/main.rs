@@ -146,12 +146,19 @@ fn run_installer() -> Result<(), String> {
     windows::write_uninstall_entry(&manifest, &root_path)
         .map_err(|e| format!("Failed to write uninstall registry key: {}", e))?;
 
+    // Create desktop shortcut if enabled
+    if manifest.desktop_shortcut {
+        windows::create_desktop_shortcut(&manifest, &root_path)
+            .map_err(|e| format!("Failed to create desktop shortcut: {}", e))?;
+    }
+
     // Write install metadata for the uninstaller
     let metadata = twi_core::InstallMetadata {
         app_title: manifest.title.clone(),
         app_id: manifest.identifier.clone(),
         app_exe: manifest.application.clone(),
         version: manifest.version.clone(),
+        desktop_shortcut: manifest.desktop_shortcut,
     };
     let meta_path = root_path.join(twi_core::INSTALL_METADATA_FILENAME);
     fs::write(

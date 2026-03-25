@@ -66,6 +66,14 @@ mod windows_impl {
             errors = true;
         }
 
+        // Remove desktop shortcut if one was created
+        if metadata.desktop_shortcut {
+            if let Err(e) = remove_desktop_shortcut(&metadata) {
+                eprintln!("Failed to remove desktop shortcut: {}", e);
+                errors = true;
+            }
+        }
+
         // Remove the uninstall registry key
         if let Err(e) = remove_uninstall_entry(&metadata.app_id) {
             eprintln!("Failed to remove uninstall registry key: {}", e);
@@ -123,6 +131,27 @@ mod windows_impl {
             }
         }
 
+        Ok(())
+    }
+
+    fn remove_desktop_shortcut(metadata: &InstallMetadata) -> Result<()> {
+        use windows::Win32::UI::Shell::{FOLDERID_Desktop, SHGetKnownFolderPath};
+
+        // SAFETY: SHGetKnownFolderPath is a well-defined Win32 API. The FOLDERID_Desktop
+        // pointer comes from a Windows SDK constant. The returned PWSTR is valid until freed.
+        let desktop_path = unsafe {
+            let flag = windows::Win32::UI::Shell::KNOWN_FOLDER_FLAG(0);
+            let result = SHGetKnownFolderPath(&FOLDERID_Desktop, flag, None)
+                .expect("Failed to get desktop folder path");
+            let hstring = result.to_hstring()?;
+            hstring.to_string_lossy().trim_end_matches('\0').to_string()
+        };
+
+        let shortcut_path = Path::new(&desktop_path).join(format!("{}.lnk", metadata.app_title));
+        if shortcut_path.exists() {
+            fs::remove_file(&shortcut_path)?;
+            println!("Removed desktop shortcut: {}", shortcut_path.display());
+        }
         Ok(())
     }
 

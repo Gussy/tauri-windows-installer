@@ -5,9 +5,13 @@ use anyhow::{anyhow, Result};
 use chrono::prelude::*;
 use twi_core::SetupManifest;
 use windows::{
-    core::{GUID, PWSTR},
+    core::{GUID, Interface, PWSTR},
     Win32::Storage::FileSystem::GetDiskFreeSpaceExW,
-    Win32::UI::Shell::{FOLDERID_LocalAppData, SHGetKnownFolderPath},
+    Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER,
+        COINIT_APARTMENTTHREADED, IPersistFile,
+    },
+    Win32::UI::Shell::{IShellLinkW, ShellLink, FOLDERID_Desktop, FOLDERID_LocalAppData, SHGetKnownFolderPath},
 };
 use winreg::enums::*;
 use winreg::RegKey;
@@ -78,6 +82,57 @@ pub fn write_uninstall_entry(manifest: &SetupManifest, root_path: &PathBuf) -> R
     app_key.set_value("NoRepair", &1u32)?;
     app_key.set_value("Language", &0x0409u32)?;
 
+    Ok(())
+}
+
+pub fn create_desktop_shortcut(manifest: &SetupManifest, root_path: &PathBuf) -> Result<()> {
+    println!("Creating desktop shortcut...");
+
+    let desktop_path = get_known_folder(&FOLDERID_Desktop)?;
+    let shortcut_path = std::path::Path::new(&desktop_path).join(format!("{}.lnk", manifest.title));
+    let target_path = root_path.join(&manifest.application);
+    let target_str: Vec<u16> = string_to_u16(target_path.to_string_lossy().as_ref());
+    let working_dir: Vec<u16> = string_to_u16(root_path.to_string_lossy().as_ref());
+    let description: Vec<u16> = string_to_u16(&manifest.title);
+    let icon_path: Vec<u16> = string_to_u16(target_path.to_string_lossy().as_ref());
+    let shortcut_path_wide: Vec<u16> = string_to_u16(shortcut_path.to_string_lossy().as_ref());
+
+    // SAFETY: COM calls are well-defined Win32 APIs. All PCWSTR values are valid
+    // null-terminated UTF-16 strings created by string_to_u16. CoInitializeEx is
+    // called before any COM object creation, and CoUninitialize is called after.
+    unsafe {
+        // COM may already be initialized (e.g. by WebView2 detection). CoInitializeEx
+        // returns S_FALSE if already initialized on this thread, or RPC_E_CHANGED_MODE
+        // if initialized with a different concurrency model — both are acceptable since
+        // we just need COM available, not to own its lifetime.
+        let hr = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        let we_initialized_com = hr.is_ok();
+        if hr.is_err() {
+            // RPC_E_CHANGED_MODE means COM is already initialized with a different
+            // threading model — we can still use it for shell link creation.
+            const RPC_E_CHANGED_MODE: i32 = 0x80010106_u32 as i32;
+            if hr.0 != RPC_E_CHANGED_MODE {
+                hr.ok()?;
+            }
+        }
+
+        let shell_link: IShellLinkW =
+            CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)?;
+
+        shell_link.SetPath(PCWSTR(target_str.as_ptr()))?;
+        shell_link.SetWorkingDirectory(PCWSTR(working_dir.as_ptr()))?;
+        shell_link.SetDescription(PCWSTR(description.as_ptr()))?;
+        shell_link.SetIconLocation(PCWSTR(icon_path.as_ptr()), 0)?;
+
+        let persist_file: IPersistFile = shell_link.cast()?;
+        persist_file.Save(PCWSTR(shortcut_path_wide.as_ptr()), true)?;
+
+        if we_initialized_com {
+            CoUninitialize();
+        }
+    }
+
+    println!("Desktop shortcut created at: {}", shortcut_path.display());
     Ok(())
 }
 

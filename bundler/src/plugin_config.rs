@@ -8,6 +8,8 @@ pub struct TauriWindowsInstaller {
     pub webview2: Webview2Config,
     #[serde(rename = "signCommand")]
     pub sign_command: Option<String>,
+    #[serde(rename = "desktopShortcut")]
+    pub desktop_shortcut: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Default)]
