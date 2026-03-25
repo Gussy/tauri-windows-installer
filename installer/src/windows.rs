@@ -94,7 +94,6 @@ pub fn create_desktop_shortcut(manifest: &SetupManifest, root_path: &PathBuf) ->
     let target_str: Vec<u16> = string_to_u16(target_path.to_string_lossy().as_ref());
     let working_dir: Vec<u16> = string_to_u16(root_path.to_string_lossy().as_ref());
     let description: Vec<u16> = string_to_u16(&manifest.title);
-    let icon_path: Vec<u16> = string_to_u16(target_path.to_string_lossy().as_ref());
     let shortcut_path_wide: Vec<u16> = string_to_u16(shortcut_path.to_string_lossy().as_ref());
 
     // SAFETY: COM calls are well-defined Win32 APIs. All PCWSTR values are valid
@@ -122,7 +121,7 @@ pub fn create_desktop_shortcut(manifest: &SetupManifest, root_path: &PathBuf) ->
         shell_link.SetPath(PCWSTR(target_str.as_ptr()))?;
         shell_link.SetWorkingDirectory(PCWSTR(working_dir.as_ptr()))?;
         shell_link.SetDescription(PCWSTR(description.as_ptr()))?;
-        shell_link.SetIconLocation(PCWSTR(icon_path.as_ptr()), 0)?;
+        shell_link.SetIconLocation(PCWSTR(target_str.as_ptr()), 0)?;
 
         let persist_file: IPersistFile = shell_link.cast()?;
         persist_file.Save(PCWSTR(shortcut_path_wide.as_ptr()), true)?;

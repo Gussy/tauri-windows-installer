@@ -151,19 +151,6 @@ pub fn bundle(options: BundleOptions) -> Result<BundleOutput, BundleError> {
         }
     };
 
-    // Create a PortableExecutable from the setup data
-    let mut setup_pe = libsui::PortableExecutable::from(&options.setup_exe)
-        .map_err(|e| BundleError::Pe(e.to_string()))?;
-
-    // Set icon if provided
-    if let Some(ref icon_path) = options.icon {
-        let icon_data = fs::read(icon_path)?;
-        setup_pe = setup_pe
-            .set_icon(&icon_data)
-            .map_err(|e| BundleError::Pe(e.to_string()))?;
-        progress(&format!("Added icon: {}", icon_path.display()));
-    }
-
     // Create the tar bundle and determine the main executable name
     let app_path = &options.app;
     let (bundle_data, main_exe_name) = if app_path.is_dir() {
@@ -223,8 +210,20 @@ pub fn bundle(options: BundleOptions) -> Result<BundleOutput, BundleError> {
         desktop_shortcut: options.desktop_shortcut,
     };
 
-    // Write PE resources in alphabetical order — Windows FindResource uses
-    // binary search on resource names, so unsorted entries won't be found.
+    // Create a PortableExecutable from the setup data
+    let mut setup_pe = libsui::PortableExecutable::from(&options.setup_exe)
+        .map_err(|e| BundleError::Pe(e.to_string()))?;
+
+    // Set icon if provided
+    if let Some(ref icon_path) = options.icon {
+        let icon_data = fs::read(icon_path)?;
+        setup_pe = setup_pe
+            .set_icon(&icon_data)
+            .map_err(|e| BundleError::Pe(e.to_string()))?;
+        progress(&format!("Added icon: {}", icon_path.display()));
+    }
+
+    // Write PE resources
     setup_pe = setup_pe
         .write_resource(BUNDLE_RESOURCE, bundle_data)
         .map_err(|e| BundleError::Pe(e.to_string()))?;
@@ -238,7 +237,6 @@ pub fn bundle(options: BundleOptions) -> Result<BundleOutput, BundleError> {
         )
         .map_err(|e| BundleError::Pe(e.to_string()))?;
 
-    // TWI marker resource (must come before WEBVIEW2 alphabetically)
     setup_pe = setup_pe
         .write_resource(TWI_RESOURCE, TWI_RESOURCE.as_bytes().to_vec())
         .map_err(|e| BundleError::Pe(e.to_string()))?;
@@ -253,6 +251,12 @@ pub fn bundle(options: BundleOptions) -> Result<BundleOutput, BundleError> {
             .map_err(|e| BundleError::Pe(e.to_string()))?;
     }
 
+    // Set version info directly on libsui's resource directory before build().
+    // This ensures icons, custom resources, and version info are all serialized
+    // in a single pass, avoiding editpe round-trip corruption of icon data.
+    set_version_info(setup_pe.resource_dir_mut(), &manifest)?;
+    progress(&format!("Set version info: {}", manifest.version));
+
     // Build the output executable
     let output_filename = format!("{}-setup.exe", options.name);
     let output_path = options.output_dir.join(&output_filename);
@@ -262,12 +266,6 @@ pub fn bundle(options: BundleOptions) -> Result<BundleOutput, BundleError> {
         .build(&mut output_file)
         .map_err(|e| BundleError::Pe(e.to_string()))?;
     drop(output_file);
-
-    // TODO: set_version_info is disabled — editpe's set_resource_directory
-    // corrupts icon resources that libsui wrote, causing Windows Explorer to
-    // not display the icon. Need to find an alternative for PE version info.
-    // set_version_info(&output_path, &manifest)?;
-    // progress(&format!("Set version info: {}", manifest.version));
 
     // Sign the output executable if a sign command is provided
     if let Some(ref sign_cmd) = options.sign_command {
@@ -315,16 +313,14 @@ fn create_tar_from_directory(dir_path: &Path) -> Result<Vec<u8>, BundleError> {
         .map_err(|e| BundleError::Tar(e.to_string()))
 }
 
-#[allow(dead_code)] // TODO: temporarily disabled, see bundle() for details
-fn set_version_info(output_path: &Path, manifest: &SetupManifest) -> Result<(), BundleError> {
+/// Set version info directly on a resource directory.
+/// Called on libsui's internal resource directory before build(), so icons,
+/// custom resources, and version info are all serialized in a single pass.
+fn set_version_info(
+    resources: &mut editpe::ResourceDirectory,
+    manifest: &SetupManifest,
+) -> Result<(), BundleError> {
     use editpe::types::FixedFileInfo;
-    use editpe::Image;
-
-    let pe_data = fs::read(output_path)?;
-    let mut image =
-        Image::parse(pe_data).map_err(|e| BundleError::Pe(format!("Failed to parse PE: {}", e)))?;
-
-    let mut resources = image.resource_directory().cloned().unwrap_or_default();
 
     let version = parse_version_u32(&manifest.version);
 
@@ -353,16 +349,9 @@ fn set_version_info(output_path: &Path, manifest: &SetupManifest) -> Result<(), 
         .set_version_info(&version_info)
         .map_err(|e| BundleError::Pe(format!("Failed to set version info: {}", e)))?;
 
-    image
-        .set_resource_directory(resources)
-        .map_err(|e| BundleError::Pe(format!("Failed to set resource directory: {}", e)))?;
-
-    fs::write(output_path, image.data())?;
-
     Ok(())
 }
 
-#[allow(dead_code)] // used by set_version_info
 fn parse_version_u32(version_str: &str) -> editpe::types::VersionU32 {
     let parts: Vec<u16> = version_str
         .split('.')

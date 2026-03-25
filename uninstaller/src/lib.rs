@@ -141,16 +141,16 @@ mod windows_impl {
         // pointer comes from a Windows SDK constant. The returned PWSTR is valid until freed.
         let desktop_path = unsafe {
             let flag = windows::Win32::UI::Shell::KNOWN_FOLDER_FLAG(0);
-            let result = SHGetKnownFolderPath(&FOLDERID_Desktop, flag, None)
-                .expect("Failed to get desktop folder path");
+            let result = SHGetKnownFolderPath(&FOLDERID_Desktop, flag, None)?;
             let hstring = result.to_hstring()?;
             hstring.to_string_lossy().trim_end_matches('\0').to_string()
         };
 
         let shortcut_path = Path::new(&desktop_path).join(format!("{}.lnk", metadata.app_title));
-        if shortcut_path.exists() {
-            fs::remove_file(&shortcut_path)?;
-            println!("Removed desktop shortcut: {}", shortcut_path.display());
+        match fs::remove_file(&shortcut_path) {
+            Ok(()) => println!("Removed desktop shortcut: {}", shortcut_path.display()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
         }
         Ok(())
     }
