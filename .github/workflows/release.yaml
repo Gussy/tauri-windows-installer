@@ -1,0 +1,149 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to release (e.g. v0.2.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  resolve-ref:
+    name: Resolve tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve tag
+        id: resolve
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+            if ! git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+              echo "::error::Tag $TAG does not exist"
+              exit 1
+            fi
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Resolved tag: $TAG (version: $VERSION)"
+
+  validate:
+    name: Validate version
+    needs: [resolve-ref]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-ref.outputs.tag }}
+
+      - name: Check Cargo.toml version matches tag
+        run: |
+          CARGO_VERSION=$(grep '^package.version' Cargo.toml | sed 's/.*"\(.*\)"/\1/')
+          TAG_VERSION="${{ needs.resolve-ref.outputs.version }}"
+          echo "Cargo.toml version: $CARGO_VERSION"
+          echo "Tag version: $TAG_VERSION"
+          if [ "$CARGO_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Version mismatch: Cargo.toml has $CARGO_VERSION but tag is v$TAG_VERSION"
+            exit 1
+          fi
+
+  ci:
+    name: CI
+    needs: [validate]
+    uses: ./.github/workflows/ci.yaml
+
+  release:
+    name: Build and release
+    needs: [resolve-ref, ci]
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-ref.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:\Users\runneradmin\.cargo\registry
+            C:\Users\runneradmin\.cargo\git
+            C:\Users\runneradmin\.rustup
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-registry-
+
+      - name: Cache target directory
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-release-
+
+      - name: Build installer (setup.exe)
+        run: cargo build --release --package twi_installer
+
+      - name: Build bundler (bundler.exe)
+        run: cargo build --release --package twi_bundler
+
+      - name: Verify bundler
+        run: .\target\release\bundler.exe --version
+
+      - name: Create checksums
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash .\target\release\bundler.exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  bundler.exe" | Out-File -Encoding ascii -NoNewline -FilePath .\target\release\bundler.exe.sha256
+          Write-Output "SHA256: $hash"
+
+      - name: Generate release notes
+        shell: bash
+        run: |
+          CURRENT_TAG="${{ needs.resolve-ref.outputs.tag }}"
+          PREV_TAG=$(git tag --sort=-v:refname | grep -E '^v[0-9]' | sed -n '2p')
+          if [ -z "$PREV_TAG" ]; then
+            git log --pretty=format:"- %s (%h)" "$CURRENT_TAG" > release-notes.txt
+          else
+            git log --pretty=format:"- %s (%h)" "${PREV_TAG}..${CURRENT_TAG}" > release-notes.txt
+          fi
+          echo ""
+          echo "Release notes:"
+          cat release-notes.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.resolve-ref.outputs.tag }}
+          name: ${{ needs.resolve-ref.outputs.tag }}
+          body_path: release-notes.txt
+          files: |
+            target/release/bundler.exe
+            target/release/bundler.exe.sha256
+          draft: false
+          prerelease: ${{ contains(needs.resolve-ref.outputs.tag, '-') }}
+          token: ${{ secrets.GITHUB_TOKEN }}
