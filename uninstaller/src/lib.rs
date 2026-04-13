@@ -89,7 +89,11 @@ mod windows_impl {
         // Rename the install directory to a unique temp name so the cleanup
         // script can't collide with a reinstall at the original path.
         // Windows allows renaming a directory that contains a running exe.
-        let exe_name = current_exe.file_name().unwrap().to_string_lossy().to_string();
+        let exe_name = current_exe
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
         let temp_dir_name = format!(
             "{}_uninstalling_{}",
             root_path.file_name().unwrap().to_string_lossy(),
@@ -185,7 +189,10 @@ mod windows_impl {
         current_directory: &Path,
     ) -> Result<()> {
         println!("Deleting self...");
-        let exe_path = current_directory.join(exe_name).to_string_lossy().to_string();
+        let exe_path = current_directory
+            .join(exe_name)
+            .to_string_lossy()
+            .to_string();
         let dir_name = current_directory.file_name().unwrap().to_string_lossy();
 
         // Retry loop: wait, attempt delete, check if still exists, repeat up to 5 times.

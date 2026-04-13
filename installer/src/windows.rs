@@ -5,13 +5,15 @@ use anyhow::{anyhow, Result};
 use chrono::prelude::*;
 use twi_core::SetupManifest;
 use windows::{
-    core::{GUID, Interface, PWSTR},
+    core::{Interface, GUID, PWSTR},
     Win32::Storage::FileSystem::GetDiskFreeSpaceExW,
     Win32::System::Com::{
-        CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER,
-        COINIT_APARTMENTTHREADED, IPersistFile,
+        CoCreateInstance, CoInitializeEx, CoUninitialize, IPersistFile, CLSCTX_INPROC_SERVER,
+        COINIT_APARTMENTTHREADED,
     },
-    Win32::UI::Shell::{IShellLinkW, ShellLink, FOLDERID_Desktop, FOLDERID_LocalAppData, SHGetKnownFolderPath},
+    Win32::UI::Shell::{
+        FOLDERID_Desktop, FOLDERID_LocalAppData, IShellLinkW, SHGetKnownFolderPath, ShellLink,
+    },
 };
 use winreg::enums::*;
 use winreg::RegKey;
@@ -115,8 +117,7 @@ pub fn create_desktop_shortcut(manifest: &SetupManifest, root_path: &PathBuf) ->
             }
         }
 
-        let shell_link: IShellLinkW =
-            CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)?;
+        let shell_link: IShellLinkW = CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)?;
 
         shell_link.SetPath(PCWSTR(target_str.as_ptr()))?;
         shell_link.SetWorkingDirectory(PCWSTR(working_dir.as_ptr()))?;
