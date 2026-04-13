@@ -7,7 +7,7 @@ members = [
     "installer",
     "uninstaller",
 ]
-package.version = "0.1.0"
+package.version = "0.1.1"
 package.edition = "2021"
 package.authors = ["@Gussy"]
 package.license = "MIT"
