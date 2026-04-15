@@ -25,7 +25,7 @@ fn main() {
 #[cfg(target_os = "windows")]
 fn run_installer() -> Result<(), String> {
     use crate::process::find_and_kill_processes_from_directory;
-    use crate::windows::{get_free_space, get_local_app_data};
+    use crate::windows::{desktop_shortcut_exists, get_free_space, get_local_app_data};
 
     use std::fs;
     use std::path::Path;
@@ -95,10 +95,17 @@ fn run_installer() -> Result<(), String> {
     }
 
     let mut root_path_renamed = String::new();
+    let mut had_existing_install = false;
+    let mut should_create_desktop_shortcut = manifest.desktop_shortcut;
 
     // Check if the application is already installed — always overwrite silently
     if !is_directory_empty(&root_path).unwrap() {
         println!("Existing installation found, overwriting...");
+        had_existing_install = true;
+
+        should_create_desktop_shortcut = manifest.desktop_shortcut
+            && desktop_shortcut_exists(&manifest.title)
+                .map_err(|e| format!("Failed to check desktop shortcut: {}", e))?;
 
         // Force stop the application if it is running
         match find_and_kill_processes_from_directory(root_path_str) {
@@ -146,10 +153,11 @@ fn run_installer() -> Result<(), String> {
     windows::write_uninstall_entry(&manifest, &root_path)
         .map_err(|e| format!("Failed to write uninstall registry key: {}", e))?;
 
-    // Create desktop shortcut if enabled
-    if manifest.desktop_shortcut {
+    if should_create_desktop_shortcut {
         windows::create_desktop_shortcut(&manifest, &root_path)
             .map_err(|e| format!("Failed to create desktop shortcut: {}", e))?;
+    } else if had_existing_install && manifest.desktop_shortcut {
+        println!("Skipping desktop shortcut creation because no existing shortcut was found.");
     }
 
     // Write install metadata for the uninstaller
@@ -158,7 +166,7 @@ fn run_installer() -> Result<(), String> {
         app_id: manifest.identifier.clone(),
         app_exe: manifest.application.clone(),
         version: manifest.version.clone(),
-        desktop_shortcut: manifest.desktop_shortcut,
+        desktop_shortcut: should_create_desktop_shortcut,
     };
     let meta_path = root_path.join(twi_core::INSTALL_METADATA_FILENAME);
     fs::write(

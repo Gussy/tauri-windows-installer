@@ -90,8 +90,7 @@ pub fn write_uninstall_entry(manifest: &SetupManifest, root_path: &PathBuf) -> R
 pub fn create_desktop_shortcut(manifest: &SetupManifest, root_path: &PathBuf) -> Result<()> {
     println!("Creating desktop shortcut...");
 
-    let desktop_path = get_known_folder(&FOLDERID_Desktop)?;
-    let shortcut_path = std::path::Path::new(&desktop_path).join(format!("{}.lnk", manifest.title));
+    let shortcut_path = desktop_shortcut_path(&manifest.title)?;
     let target_path = root_path.join(&manifest.application);
     let target_str: Vec<u16> = string_to_u16(target_path.to_string_lossy().as_ref());
     let working_dir: Vec<u16> = string_to_u16(root_path.to_string_lossy().as_ref());
@@ -134,6 +133,15 @@ pub fn create_desktop_shortcut(manifest: &SetupManifest, root_path: &PathBuf) ->
 
     println!("Desktop shortcut created at: {}", shortcut_path.display());
     Ok(())
+}
+
+pub fn desktop_shortcut_exists(title: &str) -> Result<bool> {
+    Ok(desktop_shortcut_path(title)?.exists())
+}
+
+fn desktop_shortcut_path(title: &str) -> Result<PathBuf> {
+    let desktop_path = get_known_folder(&FOLDERID_Desktop)?;
+    Ok(std::path::Path::new(&desktop_path).join(format!("{}.lnk", title)))
 }
 
 /// Gets the free disk space for the provided path.
