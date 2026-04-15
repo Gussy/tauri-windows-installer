@@ -81,6 +81,10 @@ fn run_installer() -> Result<(), String> {
         ),
     );
     log_install(&log_path, &format!("install directory={}", root_path_str));
+    if let Ok(cwd) = std::env::current_dir() {
+        log_install(&log_path, &format!("initial cwd={}", cwd.display()));
+    }
+    set_safe_working_directory(&log_path);
     println!("Installation Directory: {:?}", root_path_str);
 
     // Check if there is enough space to install the application
@@ -156,8 +160,13 @@ fn run_installer() -> Result<(), String> {
             "Renaming existing directory to '{}' to allow rollback...",
             root_path_renamed
         );
-        fs::rename(&root_path, &root_path_renamed)
-            .map_err(|e| format!("Failed to rename existing installation directory: {}", e))?;
+        if let Err(e) = fs::rename(&root_path, &root_path_renamed) {
+            log_install(
+                &log_path,
+                &format!("rename failed {} -> {}: {}", root_path.display(), root_path_renamed, e),
+            );
+            return Err(format!("Failed to rename existing installation directory: {}", e));
+        }
         log_install(
             &log_path,
             &format!("renamed existing installation to {}", root_path_renamed),
@@ -327,5 +336,17 @@ fn log_install(log_path: &std::path::Path, message: &str) {
             Local::now().format("%Y-%m-%d %H:%M:%S%.3f"),
             message
         );
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn set_safe_working_directory(log_path: &std::path::Path) {
+    let temp_dir = std::env::temp_dir();
+    match std::env::set_current_dir(&temp_dir) {
+        Ok(()) => log_install(log_path, &format!("set cwd={}", temp_dir.display())),
+        Err(e) => log_install(
+            log_path,
+            &format!("failed to set cwd={} error={}", temp_dir.display(), e),
+        ),
     }
 }
