@@ -163,9 +163,17 @@ fn run_installer() -> Result<(), String> {
         if let Err(e) = fs::rename(&root_path, &root_path_renamed) {
             log_install(
                 &log_path,
-                &format!("rename failed {} -> {}: {}", root_path.display(), root_path_renamed, e),
+                &format!(
+                    "rename failed {} -> {}: {}",
+                    root_path.display(),
+                    root_path_renamed,
+                    e
+                ),
             );
-            return Err(format!("Failed to rename existing installation directory: {}", e));
+            return Err(format!(
+                "Failed to rename existing installation directory: {}",
+                e
+            ));
         }
         log_install(
             &log_path,
