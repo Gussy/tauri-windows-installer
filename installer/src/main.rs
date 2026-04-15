@@ -62,12 +62,25 @@ fn run_installer() -> Result<(), String> {
     println!("Determining install directory...");
     let appdata =
         get_local_app_data().map_err(|e| format!("Failed to get local app data path: {}", e))?;
-    let root_path = Path::new(&appdata).join(&manifest.identifier);
+    let data_root_path = Path::new(&appdata).join(&manifest.identifier);
+    let root_path = Path::new(&appdata)
+        .join("Programs")
+        .join(&manifest.identifier);
+    let log_path = data_root_path.join("installer.log");
     if !root_path.exists() {
         fs::create_dir_all(&root_path)
             .map_err(|e| format!("Failed to create installation directory: {}", e))?;
     }
     let root_path_str = root_path.to_str().unwrap();
+    log_install(
+        &log_path,
+        &format!(
+            "installer started version={} args={:?}",
+            manifest.version,
+            std::env::args().collect::<Vec<_>>()
+        ),
+    );
+    log_install(&log_path, &format!("install directory={}", root_path_str));
     println!("Installation Directory: {:?}", root_path_str);
 
     // Check if there is enough space to install the application
@@ -89,9 +102,19 @@ fn run_installer() -> Result<(), String> {
                     format_bytes(free_space),
                     format_bytes(required_space)
                 );
+                log_install(
+                    &log_path,
+                    &format!(
+                        "disk space ok free={} required={}",
+                        free_space, required_space
+                    ),
+                );
             }
         }
-        Err(e) => eprintln!("Error: {}", e),
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            log_install(&log_path, &format!("failed to query free space: {}", e));
+        }
     }
 
     let mut root_path_renamed = String::new();
@@ -102,15 +125,29 @@ fn run_installer() -> Result<(), String> {
     if !is_directory_empty(&root_path).unwrap() {
         println!("Existing installation found, overwriting...");
         had_existing_install = true;
+        log_install(&log_path, "existing installation found");
 
         should_create_desktop_shortcut = manifest.desktop_shortcut
             && desktop_shortcut_exists(&manifest.title)
                 .map_err(|e| format!("Failed to check desktop shortcut: {}", e))?;
+        log_install(
+            &log_path,
+            &format!(
+                "desktop shortcut configured={} preserved={}",
+                manifest.desktop_shortcut, should_create_desktop_shortcut
+            ),
+        );
 
         // Force stop the application if it is running
         match find_and_kill_processes_from_directory(root_path_str) {
-            Ok(_) => println!("All processes from {} have been terminated.", root_path_str),
-            Err(e) => eprintln!("Failed to terminate processes: {}", e),
+            Ok(_) => {
+                println!("All processes from {} have been terminated.", root_path_str);
+                log_install(&log_path, "existing processes terminated");
+            }
+            Err(e) => {
+                eprintln!("Failed to terminate processes: {}", e);
+                log_install(&log_path, &format!("process termination failed: {}", e));
+            }
         }
 
         // Rename the existing installation directory
@@ -121,11 +158,16 @@ fn run_installer() -> Result<(), String> {
         );
         fs::rename(&root_path, &root_path_renamed)
             .map_err(|e| format!("Failed to rename existing installation directory: {}", e))?;
+        log_install(
+            &log_path,
+            &format!("renamed existing installation to {}", root_path_renamed),
+        );
     }
 
     println!("Preparing and cleaning installation directory...");
     remove_dir_all_ext::ensure_empty_dir(&root_path)
         .map_err(|e| format!("Failed to clean installation directory: {}", e))?;
+    log_install(&log_path, "prepared installation directory");
 
     // Extract bundle (tar archive) to install directory
     let install_result = extract_bundle(&bundle_data, &root_path);
@@ -133,31 +175,41 @@ fn run_installer() -> Result<(), String> {
     // Handle rollback if installation fails
     if let Err(e) = install_result {
         println!("Installation failed! {}", e);
+        log_install(&log_path, &format!("bundle extraction failed: {}", e));
         if !root_path_renamed.is_empty() {
             println!("Rolling back installation...");
             let _ = find_and_kill_processes_from_directory(root_path_str);
             let _ = fs::remove_dir_all(&root_path);
             let _ = fs::rename(&root_path_renamed, &root_path);
+            log_install(&log_path, "rollback attempted");
         }
 
         return Err(format!("Installation failed: {}", e));
     }
 
     println!("Installation completed successfully!");
+    log_install(&log_path, "bundle extraction completed");
     if !root_path_renamed.is_empty() {
         println!("Removing rollback directory...");
         let _ = fs::remove_dir_all(&root_path_renamed);
+        log_install(&log_path, "removed rollback directory");
     }
 
     // Write the uninstall registry keys
     windows::write_uninstall_entry(&manifest, &root_path)
         .map_err(|e| format!("Failed to write uninstall registry key: {}", e))?;
+    log_install(&log_path, "wrote uninstall registry entry");
 
     if should_create_desktop_shortcut {
         windows::create_desktop_shortcut(&manifest, &root_path)
             .map_err(|e| format!("Failed to create desktop shortcut: {}", e))?;
+        log_install(&log_path, "created desktop shortcut");
     } else if had_existing_install && manifest.desktop_shortcut {
         println!("Skipping desktop shortcut creation because no existing shortcut was found.");
+        log_install(
+            &log_path,
+            "skipped desktop shortcut creation because no existing shortcut was found",
+        );
     }
 
     // Write install metadata for the uninstaller
@@ -175,11 +227,13 @@ fn run_installer() -> Result<(), String> {
             .map_err(|e| format!("Failed to serialize metadata: {}", e))?,
     )
     .map_err(|e| format!("Failed to write install metadata: {}", e))?;
+    log_install(&log_path, "wrote install metadata");
 
     // Launch the application
     let app_path = root_path.join(&manifest.application);
     process::spawn_detached_process(app_path)
         .map_err(|e| format!("Failed to start application: {}", e))?;
+    log_install(&log_path, "spawned application successfully");
 
     Ok(())
 }
@@ -254,4 +308,24 @@ fn generate_random_string(length: usize) -> String {
         .take(length)
         .map(char::from)
         .collect()
+}
+
+#[cfg(target_os = "windows")]
+fn log_install(log_path: &std::path::Path, message: &str) {
+    use chrono::Local;
+    use std::fs::OpenOptions;
+    use std::io::Write;
+
+    if let Some(parent) = log_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(log_path) {
+        let _ = writeln!(
+            file,
+            "[{}] {}",
+            Local::now().format("%Y-%m-%d %H:%M:%S%.3f"),
+            message
+        );
+    }
 }
