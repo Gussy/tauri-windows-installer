@@ -809,7 +809,7 @@ checksum = "ffe7ed1d93f4553003e20b629abe9085e1e81b1429520f897f8f8860bc6dfc21"
 
 [[package]]
 name = "demo-app"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -4876,7 +4876,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "twi_bundler"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "bytesize",
  "clap",
@@ -4893,7 +4893,7 @@ dependencies = [
 
 [[package]]
 name = "twi_core"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "bincode",
  "editpe",
@@ -4909,7 +4909,7 @@ dependencies = [
 
 [[package]]
 name = "twi_installer"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4931,7 +4931,7 @@ dependencies = [
 
 [[package]]
 name = "twi_uninstaller"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "remove_dir_all_ext",
