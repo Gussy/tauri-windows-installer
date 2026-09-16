@@ -111,6 +111,31 @@ jobs:
       - name: Build bundler (bundler.exe)
         run: cargo build --release --package twi_bundler
 
+      - name: Verify no dynamic MSVC runtime dependency
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ($LASTEXITCODE -ne 0 -or -not $vsPath) {
+            throw "Visual Studio C++ tools were not found"
+          }
+          $dumpbin = Get-ChildItem "$vsPath\VC\Tools\MSVC" -Filter dumpbin.exe -Recurse -File |
+            Where-Object { $_.FullName -match '\\Hostx64\\x64\\dumpbin\.exe$' } |
+            Select-Object -First 1
+          if (-not $dumpbin) {
+            throw "dumpbin.exe was not found"
+          }
+          foreach ($binary in @('target\release\setup.exe', 'target\release\bundler.exe')) {
+            $dependencies = & $dumpbin.FullName /dependents $binary
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to inspect $binary"
+            }
+            if ($dependencies | Select-String -Pattern '\b(?:VCRUNTIME|MSVCP)[^\s]*\.dll\b') {
+              throw "$binary depends on the Visual C++ Redistributable"
+            }
+            Write-Output "Verified no dynamic MSVC runtime dependency: $binary"
+          }
+
       - name: Verify bundler
         run: .\target\release\bundler.exe --version
 
