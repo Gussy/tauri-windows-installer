@@ -46,6 +46,8 @@ vm_exec cmd.exe /c 'echo ready'
 qemu-img() { echo 'snapshot unexpectedly touched' > "$twi_tmp/snapshot"; }
 # Invoked indirectly by the sourced snapshot helper.
 # shellcheck disable=SC2329
+# Invoked indirectly by the sourced VM helper under test.
+# shellcheck disable=SC2317
 vm_status() { echo started; }
 export VM_DISK="$twi_tmp/source"
 if vm_restore_snapshot >/dev/null 2>&1; then echo 'Regression: live VM snapshot accepted' >&2; exit 1; fi

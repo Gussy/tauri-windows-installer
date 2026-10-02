@@ -57,6 +57,8 @@ function Get-PeResource {
 function Assert-PackageResources {
     param([string]$Path, [int]$FormatVersion = 1)
     $xmlText = [Text.Encoding]::UTF8.GetString((Get-PeResource -Path $Path -Type 24 -Name '1').Bytes)
+    # UTF-8 decoding retains the compiler's optional BOM as U+FEFF.
+    $xmlText = $xmlText.TrimStart([char]0xfeff)
     [xml]$xml = $xmlText
     $level = $xml.SelectSingleNode("//*[local-name()='requestedExecutionLevel']")
     if (-not $level -or $level.level -ne 'asInvoker' -or $level.uiAccess -ne 'false') { throw 'Package must retain the asInvoker Windows manifest' }

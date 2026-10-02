@@ -35,6 +35,10 @@ try {
     [IO.File]::WriteAllBytes($path, $image)
     $decoded = Assert-PackageResources $path
     if ($decoded.version -ne '1.2.3') { throw 'Named manifest resource did not decode' }
+    [byte[]]$xmlWithBom = [byte[]](0xef, 0xbb, 0xbf) + $xml
+    Payload 0x100 0x700 $xmlWithBom
+    [IO.File]::WriteAllBytes($path, $image)
+    $null = Assert-PackageResources $path
     $resource = Get-PeResource -Path $path -Name 'TWI_BUNDLE'
     if ($resource.FileOffset -ne 0x500 -or $resource.Size -ne 5) { throw 'Resource offset/size did not match section mapping' }
     $image[$resource.FileOffset] = $image[$resource.FileOffset] -bxor 1
