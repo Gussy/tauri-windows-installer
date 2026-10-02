@@ -42,7 +42,7 @@ jobs:
       - run: cargo clippy --locked -p twi_core --features bundler -p twi_bundler --all-targets -- -D warnings
       - run: cargo test --locked
       - name: Test optimized GLib advisory backport
-        run: cargo test --locked --release -p glib --test variant_str_iter_backport
+        run: cargo test --locked --release -p twi-glib-backport-test
       - name: Shell syntax and regression tests
         run: |
           bash -n tests/*.sh tests/helpers/*.sh

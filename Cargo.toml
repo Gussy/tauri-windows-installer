@@ -6,6 +6,7 @@ members = [
     "bundler",
     "installer",
     "uninstaller",
+    "tests/glib-backport",
 ]
 package.version = "0.2.0"
 package.edition = "2021"

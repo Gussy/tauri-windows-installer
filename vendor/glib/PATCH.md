@@ -28,7 +28,7 @@ five affected iterator entry points. Run it in an optimized build to cover the
 original failure:
 
 ```sh
-cargo test --release -p glib --test variant_str_iter_backport
+cargo test --locked --release -p twi-glib-backport-test
 ```
 
 Remove the local patch and its source gate when Tauri's Linux dependencies

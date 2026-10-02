@@ -1,0 +1,12 @@
+[package]
+name = "twi-glib-backport-test"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+glib = "=0.18.5"
+
+[[test]]
+name = "variant_str_iter_backport"
+path = "../../vendor/glib/tests/variant_str_iter_backport.rs"
