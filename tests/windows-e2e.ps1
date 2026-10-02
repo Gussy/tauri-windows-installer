@@ -80,7 +80,8 @@ try {
     Assert ((Get-ItemPropertyValue $registry DisplayVersion) -eq '1.0.0') 'Fresh registry version mismatch'
     Assert (Test-Path -LiteralPath $shortcut1) 'Fresh desktop shortcut missing'
     $deadline = [DateTime]::UtcNow.AddSeconds(10)
-    while (-not (Test-Path -LiteralPath (Join-Path $root '.fixture-cwd.txt'))) {
+    while (-not (Test-Path -LiteralPath (Join-Path $root '.fixture-cwd.txt')) -or
+        [string]::IsNullOrEmpty([string](Get-Content -Raw -LiteralPath (Join-Path $root '.fixture-cwd.txt')))) {
         if ([DateTime]::UtcNow -ge $deadline) { throw 'Installer did not launch the fixture' }
         Start-Sleep -Milliseconds 100
     }
@@ -122,9 +123,17 @@ public static class TwiDirectoryLock {
     public static extern SafeFileHandle CreateFile(string name, uint access, uint share, IntPtr security, uint creation, uint flags, IntPtr template);
 }
 '@
-    $handle = [TwiDirectoryLock]::CreateFile($root, 0, 3, [IntPtr]::Zero, 3, 0x02000000, [IntPtr]::Zero)
+    # FILE_LIST_DIRECTORY participates in sharing checks; zero access only
+    # queries metadata and does not reliably prevent a directory rename.
+    $handle = [TwiDirectoryLock]::CreateFile($root, 1, 3, [IntPtr]::Zero, 3, 0x02000000, [IntPtr]::Zero)
     Assert (-not $handle.IsInvalid) 'Could not acquire deterministic directory lock'
-    try { Run-Setup $setupFiles.v2 $false } finally { $handle.Dispose() }
+    try {
+        $probe = [TwiDirectoryLock]::CreateFile($root, 0x10000, 7, [IntPtr]::Zero, 3, 0x02000000, [IntPtr]::Zero)
+        $probeError = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+        try { Assert ($probe.IsInvalid -and $probeError -eq 32) 'Directory fixture does not deny DELETE access' }
+        finally { $probe.Dispose() }
+        Run-Setup $setupFiles.v2 $false
+    } finally { $handle.Dispose() }
     Assert (Test-Path -LiteralPath $main1) 'Failed upgrade lost old executable'
     Assert ((Get-ItemPropertyValue $registry DisplayVersion) -eq '1.0.0') 'Failed upgrade changed registration'
     Assert ((Get-Content -Raw (Join-Path $root '.twi-meta.json') | ConvertFrom-Json).version -eq '1.0.0') 'Failed upgrade changed metadata'
@@ -178,7 +187,8 @@ public static class TwiDirectoryLock {
     $passed.Add('interrupted switch journal restores old installation before retry')
 
     $deadline = [DateTime]::UtcNow.AddSeconds(10)
-    while (-not (Test-Path -LiteralPath (Join-Path $root '.fixture-cwd.txt'))) {
+    while (-not (Test-Path -LiteralPath (Join-Path $root '.fixture-cwd.txt')) -or
+        [string]::IsNullOrEmpty([string](Get-Content -Raw -LiteralPath (Join-Path $root '.fixture-cwd.txt')))) {
         if ([DateTime]::UtcNow -ge $deadline) { throw 'Recovered install did not launch the fixture' }
         Start-Sleep -Milliseconds 100
     }
@@ -246,7 +256,7 @@ public static class TwiDirectoryLock {
         $cleanupLog = Join-Path $state.worker 'cleanup.log'
         $deadline = [DateTime]::UtcNow.AddSeconds(45)
         do {
-            if ((Test-Path -LiteralPath $cleanupLog) -and (Get-Content -Raw -LiteralPath $cleanupLog).Contains('Cleanup failed:')) { break }
+            if ((Test-Path -LiteralPath $cleanupLog) -and ([string](Get-Content -Raw -LiteralPath $cleanupLog)).Contains('Cleanup failed:')) { break }
             if ([DateTime]::UtcNow -ge $deadline) { throw 'Locked-file worker did not retain a completed failed attempt' }
             Start-Sleep -Milliseconds 200
         } while ($true)
