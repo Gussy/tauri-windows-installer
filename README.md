@@ -1,71 +1,52 @@
 # Tauri Windows Installer
 
-A pure-Rust, zero-click Windows installer for [Tauri](https://tauri.app/) apps. Click the setup executable and the app installs to `%LOCALAPPDATA%`, launches immediately, and registers an uninstaller. No wizard, no options.
+A Rust Windows installer for [Tauri](https://tauri.app/) apps. Setup installs per user, launches the app, and registers its uninstaller without a wizard. Applications live in `%LOCALAPPDATA%\Programs\<identifier>`. Application data beneath `%LOCALAPPDATA%\<identifier>` is preserved during upgrades and uninstall.
 
-Inspired by [VeloPack](https://github.com/velopack/velopack). Unlike VeloPack, this is Tauri-specific and has no update mechanism (Tauri has its own updater plugin).
+Inspired by [VeloPack](https://github.com/velopack/velopack). TWI does not provide an updater; use Tauri's updater integration separately.
 
-## How it works
+## Build and package
 
-The bundler embeds your built app into a setup executable as PE resources (via [libsui](https://github.com/nicolo-ribaudo/libsui)). The setup executable extracts, installs, and launches — all in one click.
+Build the Windows stub with the pinned Rust toolchain and the Visual Studio C++ tools / Windows SDK. Build the installer before the bundler so the intended stub is embedded:
 
-```
-core/            Shared library — types, constants, and bundling API
-bundler/         CLI that creates setup executables
-installer/       The setup.exe stub (runs on end-user machines)
-uninstaller/     Library linked into your app for --uninstall handling
-```
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for details on the PE resource approach, bundle format, and programmatic API.
-
-## Prerequisites
-
-Install the following before building:
-
-1. **Rust** — Install via [rustup](https://rustup.rs/). Download and run `rustup-init.exe`, then restart your terminal.
-2. **Node.js** — Install the LTS version from [nodejs.org](https://nodejs.org/).
-3. **pnpm** — After installing Node.js, run:
-   ```sh
-   npm install -g pnpm
-   ```
-
-Verify everything is installed:
-```sh
-cargo --version
-node --version
-pnpm --version
+```powershell
+cargo build --locked --release -p twi_installer
+$env:TWI_SETUP_EXE = (Resolve-Path target\release\setup.exe).Path
+cargo build --locked --release -p twi_bundler
+.\target\release\bundler.exe --stub-info
+.\target\release\bundler.exe -c path\to\tauri.conf.json -a path\to\app.exe
 ```
 
-## Usage
+For a directory containing sidecars, specify its main executable. Nested relative paths are supported:
 
-### CLI
+```powershell
+.\target\release\bundler.exe -c tauri.conf.json -a dist\app --main-exe bin/app.exe
+```
+
+The bundler reads product name, version, identifier, publisher and icon settings from `tauri.conf.json`. It produces `{productName}-setup.exe`. Identifiers, paths and executable images are validated before packaging and again at installation.
+
+For packaging on macOS or Linux, supply a real Windows stub built from compatible source. The development-only placeholder cannot produce an installer:
 
 ```sh
-# Build the installer stub first (required before building the bundler)
-cargo build --package twi_installer --release
-
-# Copy setup.exe to the bundler directory (required for release builds)
-cp target/release/setup.exe bundler/setup.exe
-
-# Build the bundler (embeds the installer's setup.exe at compile time)
-cargo build --package twi_bundler --release
-
-# Bundle a Tauri app into a setup executable
-bundler -c path/to/tauri.conf.json -a path/to/app.exe
+TWI_SETUP_EXE=/absolute/path/setup.exe cargo build --locked --release -p twi_bundler
+./target/release/bundler -c tauri.conf.json -a app.exe
+# A runtime override is also available:
+./target/release/bundler --setup-exe /absolute/path/setup.exe -c tauri.conf.json -a app.exe
 ```
 
-The bundler reads `tauri.conf.json` for product name, version, identifier, publisher, and icons. Output: `{name}-setup.exe`.
+| CLI option | Purpose |
+| --- | --- |
+| `-c, --tauri-conf <PATH>` | Tauri configuration file |
+| `-a, --app <PATH>` | Executable or directory to package |
+| `-t, --title <TITLE>` | Display title; defaults to productName |
+| `--main-exe <PATH>` | Relative main executable for a directory |
+| `--setup-exe <PATH>` | Override the embedded Windows installer stub |
+| `--stub-info` | Print stub SHA256, ABI/schema, version and manifest information |
+| `-s, --sign-command <COMMAND>` | Sign the final packaged executable |
+| `-o, --output-dir <DIR>` | Output directory; defaults to cwd |
 
-```
-Options:
-  -c, --tauri-conf <PATH>     Path to tauri.conf.json
-  -a, --app <PATH>            Application executable or directory
-  -t, --title <TITLE>         App title (defaults to productName from config)
-      --main-exe <NAME>       Main exe name (required when --app is a directory)
-  -s, --sign-command <CMD>    Code signing command (file path appended as last arg)
-  -o, --output-dir <DIR>      Output directory (defaults to current directory)
-```
+Setup accepts `--silent` to suppress error dialogs and `--no-launch` to suppress the final application launch. Both are useful for automation. Errors still return a nonzero status and are logged.
 
-### As a library
+## Library API
 
 ```rust
 use twi_core::{bundle, BundleOptions};
@@ -77,93 +58,64 @@ let output = bundle(BundleOptions {
     version: "1.0.0".into(),
     identifier: "com.example.myapp".into(),
     publisher: "Example Inc.".into(),
-    app: "target/release/my-app.exe".into(),
-    main_exe: None,
+    app: "dist/app".into(),
+    main_exe: Some("bin/app.exe".into()),
     icon: None,
     webview2: None,
     sign_command: None,
-    output_dir: "dist".into(),
-    on_progress: Some(Box::new(|msg| println!("{msg}"))),
+    desktop_shortcut: true,
+    output_dir: "dist/installers".into(),
+    on_progress: Some(Box::new(|message| println!("{message}"))),
 })?;
 ```
 
-Add to `Cargo.toml`: `twi_core = { version = "0.1", features = ["bundler"] }`
+Enable the `bundler` feature on `twi_core`. Signing uses a program and argument vector; see [SIGNING.md](SIGNING.md).
 
-### Uninstall integration
+## Uninstall integration
 
-Link the uninstaller library into your Tauri app:
+Call the library before normal app initialization:
 
 ```rust
 fn main() {
-    #[cfg(target_os = "windows")]
-    if twi_uninstaller::handle_uninstall() {
-        std::process::exit(0);
-    }
-    // ... normal app startup
+    twi_uninstaller::handle_uninstall();
+    // Normal app startup follows when no uninstall flag was present.
 }
 ```
 
-The installer registers `"app.exe" --uninstall` in the Windows registry. When triggered, it kills running processes, removes files, cleans up the registry, and deletes itself.
+The installer registers `"app.exe" --uninstall`. The library finds and validates installation metadata, shares the setup operation lock, stops application processes and schedules cleanup. Nested main executables are supported. Failed cleanup retains a retry path; application data outside the managed binaries is preserved.
 
-## Features
+## Durability
 
-- Single-file setup executable (app + metadata + optional WebView2 bundled as PE resources)
-- Zstd-compressed tar bundle (supports single exe or full directory with sidecars)
-- PE version info (shows version/publisher in Windows file properties)
-- Code signing support (`--sign-command` or `signCommand` in tauri.conf.json)
-- WebView2 Evergreen bootstrapper bundling (auto-installs if not present)
-- Silent overwrite on reinstall with rollback on failure
-- Per-user install to `%LOCALAPPDATA%` (no admin required)
+The package contains a versioned JSON manifest, compressed tar payload, payload digest and unpacked size. The stub preserves its Windows `asInvoker` manifest and carries an explicit ABI marker. Setup validates and extracts into staging before replacing the live installation, keeps a recoverable transaction record and retains the old version until commit. Setup and uninstall share an exclusive per-application OS lock.
 
-## Compatibility
+Desktop shortcuts are tracked as owned artifacts. An upgrade preserves a user's deletion and handles explicit title / shortcut setting changes. WebView2 Evergreen can be included through the plugin configuration; its bootstrapper needs internet access when installing a missing runtime. A package without a bootstrapper requires an already installed runtime.
 
-| | 64-bit | 32-bit |
-|---|---|---|
-| Windows 11 | Supported | N/A |
-| Windows 10 | Supported | Not supported |
+The binaries target 64-bit Windows 10 and Windows 11. Packaging checks executable architecture; test the architecture and Windows versions you distribute.
 
-WebView2 is included with Windows 10 20H2+. For earlier versions, the Evergreen bootstrapper (~1.6 MB) can be bundled.
+## Development and validation
 
-## Tauri integration
+```sh
+cargo test --locked
+cargo clippy --locked -p twi_core --features bundler -p twi_bundler --all-targets -- -D warnings
+bash tests/harness-regression.sh
+```
 
-**Short-term**: Use `beforeBundleCommand` in `tauri.conf.json` to run the bundler CLI after `tauri build`.
-
-**Long-term**: Call `twi_core::bundle()` directly from the Tauri bundler. The library has no Tauri dependency.
+Continuous CI also builds and tests the Windows installer/uninstaller and runs native failure / upgrade / cleanup checks. Local native validation is `task test:windows`. Standard-user VM validation is `task test:e2e`; its fixture retains UAC and Defender. See [ARCHITECTURE.md](ARCHITECTURE.md) for test setup, limitations and release checks, and [AUDIT.md](AUDIT.md) for the original audit evidence.
 
 ## Demo app
 
-The included demo app lets you test the full build-and-install flow.
+Install Node.js and pnpm, build the installer and bundler as above, then:
 
 ```sh
-# 1. Build the installer and bundler (if you haven't already)
-cargo build --package twi_installer --release
-cp target/release/setup.exe bundler/setup.exe
-cargo build --package twi_bundler --release
-
-# 2. Build the demo Tauri app
 cd demo-app
-pnpm install
-pnpm tauri build
+pnpm install --frozen-lockfile
+pnpm tauri build -- --locked
 cd ..
-
-# 3. Bundle it into a setup executable
 ./target/release/bundler -c demo-app/src-tauri/tauri.conf.json -a target/release/demo-app.exe
 ```
 
-This produces `demo-app-setup.exe` which you can run to test installation.
-
-## Development
-
-Develop on macOS, test on Windows. The workspace default members (`core` + `bundler`) compile on macOS. The `installer` and `uninstaller` are Windows-only.
-
-```sh
-cargo check          # Check core + bundler
-cargo test           # Run all tests
-cargo check -p twi_core --features bundler   # Check bundling API
-```
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the full development guide including VM-based e2e testing.
+The demo build requires Windows for its application executable. Its output is `demo-app-setup.exe`.
 
 ## License
 
-MIT
+MIT.

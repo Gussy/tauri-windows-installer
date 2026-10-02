@@ -1,112 +1,38 @@
 #!/usr/bin/env bash
-# run.sh — Test runner for VM-based end-to-end tests.
-#
-# Usage:
-#   ./tests/run.sh                              # run all test-*.sh
-#   ./tests/run.sh test-fresh-install            # run one test
-#   SETUP_EXE=./demo-app-setup.exe ./tests/run.sh
-
 set -euo pipefail
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib.sh"
-
-# Validate setup exe exists
-if [[ ! -f "$SETUP_EXE" ]]; then
-    echo "ERROR: Setup executable not found: ${SETUP_EXE}" >&2
-    echo "Set SETUP_EXE to the path of your demo-app-setup.exe" >&2
-    exit 1
-fi
-
-# Find the VM disk once upfront
+[[ -f "$SETUP_EXE" ]] || { echo "Setup executable missing: $SETUP_EXE" >&2; exit 1; }
+vm_require_tools
 vm_find_disk
-
-# Discover tests
+TESTS=()
 if [[ $# -gt 0 ]]; then
-    # Run specific tests
-    TESTS=()
-    for arg in "$@"; do
-        test_file="${SCRIPT_DIR}/${arg}.sh"
-        if [[ ! -f "$test_file" ]]; then
-            test_file="${SCRIPT_DIR}/test-${arg}.sh"
-        fi
-        if [[ ! -f "$test_file" ]]; then
-            echo "ERROR: Test not found: ${arg}" >&2
-            exit 1
-        fi
-        TESTS+=("$test_file")
+    for name in "$@"; do
+        [[ "$name" =~ ^(test-)?[a-z0-9-]+$ ]] || { echo "Invalid test name: $name" >&2; exit 2; }
+        file="${SCRIPT_DIR}/${name}.sh"
+        [[ -f "$file" ]] || file="${SCRIPT_DIR}/test-${name}.sh"
+        [[ -f "$file" ]] || { echo "Test not found: $name" >&2; exit 2; }
+        TESTS+=("$file")
     done
 else
-    # Run all test-*.sh files
-    TESTS=()
-    for f in "${SCRIPT_DIR}"/test-*.sh; do
-        [[ -f "$f" ]] && TESTS+=("$f")
-    done
+    for file in "${SCRIPT_DIR}"/test-*.sh; do [[ ! -f "$file" ]] || TESTS+=("$file"); done
 fi
-
-if [[ ${#TESTS[@]} -eq 0 ]]; then
-    echo "No tests found."
-    exit 0
-fi
-
-echo "========================================"
-echo "Running ${#TESTS[@]} test(s)"
-echo "Setup exe: ${SETUP_EXE}"
-echo "VM: ${VM_NAME}"
-echo "========================================"
-echo ""
-
-TOTAL=0
-PASSED=0
-FAILED=0
-FAILED_NAMES=()
-
-for test_file in "${TESTS[@]}"; do
-    test_name="$(basename "$test_file" .sh)"
-    TOTAL=$(( TOTAL + 1 ))
-
-    echo "----------------------------------------"
-    echo "TEST: ${test_name}"
-    echo "----------------------------------------"
-
-    # Reset assertion counters
-    ASSERT_PASS=0
-    ASSERT_FAIL=0
-
-    # Restore → Start → Wait
+[[ ${#TESTS[@]} -gt 0 ]] || { echo 'No tests found.' >&2; exit 1; }
+export SETUP_EXE VM_NAME VM_DISK SNAPSHOT_NAME VM_TEST_USER APP_IDENTIFIER APP_NAME APP_VERSION APP_EXE WIN_TEMP_DIR
+failed=0
+trap 'vm_stop || true' EXIT
+for file in "${TESTS[@]}"; do
+    echo "TEST: $(basename "$file" .sh)"
     vm_stop
     vm_restore_snapshot
     vm_start
-
-    # Source the test and run test_main
-    test_result=0
-    (
-        source "$test_file"
-        test_main
-    ) || test_result=$?
-
-    # Stop VM
-    vm_stop
-
-    if [[ $test_result -eq 0 ]]; then
-        echo "RESULT: PASS"
-        PASSED=$(( PASSED + 1 ))
+    # The ||/if exemption exists only in this parent, never in the child shell.
+    if bash "${SCRIPT_DIR}/run-one.sh" "$file"; then
+        echo 'RESULT: PASS'
     else
-        echo "RESULT: FAIL"
-        FAILED=$(( FAILED + 1 ))
-        FAILED_NAMES+=("$test_name")
+        echo 'RESULT: FAIL'; failed=$((failed + 1))
     fi
-    echo ""
+    vm_stop
 done
-
-echo "========================================"
-echo "SUMMARY: ${PASSED}/${TOTAL} passed, ${FAILED} failed"
-if [[ ${#FAILED_NAMES[@]} -gt 0 ]]; then
-    echo "Failed tests:"
-    for name in "${FAILED_NAMES[@]}"; do
-        echo "  - ${name}"
-    done
-fi
-echo "========================================"
-
-exit "$FAILED"
+echo "SUMMARY: $((${#TESTS[@]} - failed))/${#TESTS[@]} passed, $failed failed"
+[[ $failed -eq 0 ]]

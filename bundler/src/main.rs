@@ -5,7 +5,9 @@ use bytesize::ByteSize;
 use clap::Parser;
 use colored::*;
 use plugin_config::{load_tauri_config, Webview2Bundle};
+use sha2::{Digest, Sha256};
 use std::{env, path::Path, path::PathBuf};
+use twi_core::bundle::SigningCommand;
 use twi_core::{BundleOptions, WebView2Embedding};
 use webview2::{download_webview2_evergreen, WEBVIEW2_EVERGREEN_EXE};
 
@@ -18,12 +20,12 @@ use webview2::{download_webview2_evergreen, WEBVIEW2_EVERGREEN_EXE};
 #[command(version, about, long_about = None)]
 struct Args {
     /// Path to the Tauri configuration file
-    #[arg(short = 'c', long)]
-    tauri_conf: String,
+    #[arg(short = 'c', long, required_unless_present = "stub_info")]
+    tauri_conf: Option<String>,
 
     /// Path to application executable or directory to bundle
-    #[arg(short, long)]
-    app: String,
+    #[arg(short, long, required_unless_present = "stub_info")]
+    app: Option<String>,
 
     /// Title of the bundled application. Falls back to productName from tauri.conf.json.
     #[arg(short, long)]
@@ -43,16 +45,51 @@ struct Args {
     /// Output directory for the setup executable (defaults to current directory)
     #[arg(short, long)]
     output_dir: Option<String>,
+
+    /// Explicit Windows setup stub, usable on any build host.
+    #[arg(long)]
+    setup_exe: Option<PathBuf>,
+
+    /// Inspect the embedded or explicitly supplied setup stub as JSON.
+    #[arg(long)]
+    stub_info: bool,
+
+    /// WebView2 bootstrapper cache directory.
+    #[arg(long)]
+    cache_dir: Option<PathBuf>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
+    let setup = load_setup(args.setup_exe.as_deref())?;
+    if args.stub_info {
+        let image = editpe::Image::parse(setup.as_slice())?;
+        let manifest = image
+            .resource_directory()
+            .and_then(|r| r.get_manifest().ok().flatten());
+        println!(
+            "{}",
+            serde_json::json!({
+                "stub_sha256":format!("{:x}",Sha256::digest(&setup)),
+                "package_version":env!("CARGO_PKG_VERSION"),
+                "format_version":twi_core::FORMAT_VERSION,
+                "architecture":"x86_64",
+                "manifest_present":manifest.is_some(),
+                "manifest_as_invoker":manifest.as_ref().is_some_and(|m|m.contains("asInvoker")),
+                "abi_compatible":true,
+            })
+        );
+        return Ok(());
+    }
     println!("{}", "Packaging Tauri application...".green().bold());
 
-    println!("  Loading config: {}", args.tauri_conf);
-    let (tauri_conf, plugin_config) = load_tauri_config(&args.tauri_conf);
-    let config_dir = Path::new(&args.tauri_conf).parent().unwrap();
+    let config_path = args.tauri_conf.as_deref().ok_or("--tauri-conf required")?;
+    println!("  Loading config: {config_path}");
+    let (tauri_conf, plugin_config) = load_tauri_config(config_path)?;
+    let config_dir = Path::new(config_path)
+        .parent()
+        .unwrap_or_else(|| Path::new("."));
 
     let title = args
         .title
@@ -61,19 +98,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .ok_or("--title required (or set productName in tauri.conf.json)")?;
 
     let icon = resolve_icon(&plugin_config, &tauri_conf, config_dir);
-    let webview2 = resolve_webview2(&plugin_config);
-    let sign_command = resolve_sign_command(&args, &plugin_config, &tauri_conf);
+    let webview2 = resolve_webview2(&plugin_config, args.cache_dir.as_deref())?;
+    let sign_command = resolve_sign_command(&args, &plugin_config, &tauri_conf)?;
 
     let desktop_shortcut = plugin_config.desktop_shortcut.unwrap_or(true);
 
     let options = BundleOptions {
-        setup_exe: load_embedded_setup(),
-        name: tauri_conf.product_name.clone().unwrap_or_default(),
+        setup_exe: setup,
+        name: tauri_conf
+            .product_name
+            .clone()
+            .unwrap_or_else(|| title.clone()),
         title,
         version: tauri_conf.version.clone().unwrap_or_else(|| "0.0.0".into()),
         identifier: tauri_conf.identifier.clone(),
         publisher: tauri_conf.bundle.publisher.clone().unwrap_or_default(),
-        app: PathBuf::from(&args.app),
+        app: PathBuf::from(args.app.as_deref().ok_or("--app required")?),
         main_exe: args.main_exe,
         icon,
         webview2,
@@ -82,7 +122,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         output_dir: args
             .output_dir
             .map(PathBuf::from)
-            .unwrap_or_else(|| env::current_dir().unwrap()),
+            .unwrap_or(env::current_dir()?),
         on_progress: Some(Box::new(|msg| println!("  {}", msg.green()))),
     };
 
@@ -104,7 +144,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn resolve_icon(
     plugin_config: &plugin_config::TauriWindowsInstaller,
-    tauri_conf: &tauri::Config,
+    tauri_conf: &tauri_utils::config::Config,
     config_dir: &Path,
 ) -> Option<PathBuf> {
     let icon_relative = plugin_config.icon.clone().or_else(|| {
@@ -121,23 +161,23 @@ fn resolve_icon(
 
 fn resolve_webview2(
     plugin_config: &plugin_config::TauriWindowsInstaller,
-) -> Option<WebView2Embedding> {
+    cache: Option<&Path>,
+) -> Result<Option<WebView2Embedding>, Box<dyn std::error::Error>> {
     match &plugin_config.webview2.bundle {
         Some(Webview2Bundle::Evergreen) => {
             println!(
                 "  {}",
                 "Bundling the webview2 evergreen bootstrapper...".green()
             );
-            let data =
-                download_webview2_evergreen().expect("Failed to download WebView2 bootstrapper");
-            Some(WebView2Embedding {
+            let data = download_webview2_evergreen(cache)?;
+            Ok(Some(WebView2Embedding {
                 data,
                 filename: WEBVIEW2_EVERGREEN_EXE.to_string(),
-            })
+            }))
         }
         None => {
             println!("  {}", "No webview2 bundle specified".blue());
-            None
+            Ok(None)
         }
     }
 }
@@ -145,90 +185,104 @@ fn resolve_webview2(
 fn resolve_sign_command(
     args: &Args,
     plugin_config: &plugin_config::TauriWindowsInstaller,
-    tauri_conf: &tauri::Config,
-) -> Option<String> {
-    // Priority: CLI flag > plugin config > tauri.conf.json bundle.windows.signCommand
-    //
-    // Tauri's sign_command uses %1 as a placeholder for the binary path.
-    // Our library appends the path as the last argument instead.
-    // If %1 appears in a non-final position, we can't safely rewrite it
-    // (would change argument structure), so we strip it and let the library append.
-    // If %1 doesn't appear, the command works as-is since the library appends the path.
-    args.sign_command
-        .clone()
-        .or_else(|| plugin_config.sign_command.clone())
-        .or_else(|| {
-            tauri_conf
-                .bundle
-                .windows
-                .sign_command
-                .as_ref()
-                .map(|sc| match sc {
-                    tauri::utils::config::CustomSignCommandConfig::Command(cmd) => {
-                        strip_percent1_placeholder(cmd)
-                    }
-                    tauri::utils::config::CustomSignCommandConfig::CommandWithOptions {
-                        cmd,
-                        args,
-                    } => {
-                        let mut parts = vec![cmd.clone()];
-                        parts.extend(
-                            args.iter()
-                                .map(|a| strip_percent1_placeholder(a))
-                                .filter(|a| !a.is_empty()),
-                        );
-                        parts.join(" ")
-                    }
-                })
+    tauri_conf: &tauri_utils::config::Config,
+) -> Result<Option<SigningCommand>, twi_core::BundleError> {
+    if let Some(command) = args
+        .sign_command
+        .as_ref()
+        .or(plugin_config.sign_command.as_ref())
+    {
+        return SigningCommand::parse_legacy(command).map(Some);
+    }
+    use tauri_utils::config::CustomSignCommandConfig;
+    tauri_conf
+        .bundle
+        .windows
+        .sign_command
+        .as_ref()
+        .map(|command| match command {
+            CustomSignCommandConfig::Command(command) => SigningCommand::parse_legacy(command),
+            CustomSignCommandConfig::CommandWithOptions { cmd, args } => Ok(SigningCommand {
+                program: PathBuf::from(cmd),
+                args: args.clone(),
+            }),
         })
+        .transpose()
 }
 
-/// Strip the Tauri `%1` placeholder from a sign command string.
-/// Returns the trimmed string with `%1` removed. If the entire arg is `%1`,
-/// returns empty string (caller filters it out).
-fn strip_percent1_placeholder(s: &str) -> String {
-    s.replace("%1", "").trim().to_string()
-}
-
-fn load_embedded_setup() -> Vec<u8> {
-    let setup_data = include_bytes!(concat!(env!("OUT_DIR"), "/", env!("SETUP_EXE"))).to_vec();
-
-    println!(
-        "  Loaded setup executable: {} ({} bytes)",
-        env!("SETUP_EXE"),
-        ByteSize(setup_data.len().try_into().unwrap())
-    );
-
-    setup_data
+fn load_setup(path: Option<&Path>) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let setup = if let Some(path) = path {
+        std::fs::read(path)?
+    } else {
+        let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/", env!("SETUP_EXE"))).to_vec();
+        if bytes.is_empty() {
+            return Err("No setup stub embedded. Build twi_installer and set TWI_SETUP_EXE, or pass --setup-exe.".into());
+        }
+        if format!("{:x}", Sha256::digest(&bytes)) != env!("TWI_SETUP_EXE_SHA256") {
+            return Err("Embedded setup stub checksum does not match build metadata".into());
+        }
+        bytes
+    };
+    twi_core::bundle::validate_setup_stub(&setup)?;
+    Ok(setup)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn args() -> Args {
+        Args {
+            tauri_conf: None,
+            app: None,
+            title: None,
+            main_exe: None,
+            sign_command: None,
+            output_dir: None,
+            setup_exe: None,
+            stub_info: false,
+            cache_dir: None,
+        }
+    }
+
     #[test]
-    fn test_strip_percent1_placeholder_removes() {
+    fn structured_signer_preserves_program_arguments_and_placeholder() {
+        let config: tauri_utils::config::Config = serde_json::from_value(serde_json::json!({
+            "identifier":"com.example.test",
+            "bundle":{"windows":{"signCommand":{"cmd":"C:\\Program Files\\sign.exe",
+            "args":["--password","two words","--input=%1","--quiet"]}}}
+        }))
+        .unwrap();
+        let command = resolve_sign_command(
+            &args(),
+            &plugin_config::TauriWindowsInstaller::default(),
+            &config,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(command.program, PathBuf::from(r"C:\Program Files\sign.exe"));
         assert_eq!(
-            strip_percent1_placeholder("signtool sign %1 /fd SHA256"),
-            "signtool sign  /fd SHA256"
+            command.args,
+            ["--password", "two words", "--input=%1", "--quiet"]
         );
     }
 
     #[test]
-    fn test_strip_percent1_placeholder_standalone() {
-        assert_eq!(strip_percent1_placeholder("%1"), "");
-    }
-
-    #[test]
-    fn test_strip_percent1_placeholder_no_placeholder() {
+    fn cli_signer_takes_priority() {
+        let config: tauri_utils::config::Config =
+            serde_json::from_value(serde_json::json!({"identifier":"com.example.test"})).unwrap();
+        let mut input = args();
+        input.sign_command = Some("cli.exe %1".into());
+        let plugin = plugin_config::TauriWindowsInstaller {
+            sign_command: Some("plugin.exe".into()),
+            ..Default::default()
+        };
         assert_eq!(
-            strip_percent1_placeholder("signtool sign /fd SHA256"),
-            "signtool sign /fd SHA256"
+            resolve_sign_command(&input, &plugin, &config)
+                .unwrap()
+                .unwrap()
+                .program,
+            PathBuf::from("cli.exe")
         );
-    }
-
-    #[test]
-    fn test_strip_percent1_placeholder_empty() {
-        assert_eq!(strip_percent1_placeholder(""), "");
     }
 }

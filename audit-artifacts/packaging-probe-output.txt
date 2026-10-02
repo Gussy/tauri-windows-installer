@@ -1,0 +1,23 @@
+MANIFEST LOSS: before=true, after=None
+INVALID IDENTIFIER "": Ok(2099)
+INVALID IDENTIFIER "..": Ok(2101)
+INVALID IDENTIFIER "../outside": Ok(2109)
+INVALID IDENTIFIER "C:\\Outside": Ok(2109)
+INVALID MAIN EXE "../outside.exe": Ok(2162)
+INVALID MAIN EXE ".": Ok(2149)
+INVALID MAIN EXE "": Ok(2148)
+PLUGIN CONFIG Object {}: Err(Error("missing field `webview2`", line: 0, column: 0))
+PLUGIN CONFIG Object {"desktopShortcut": Bool(false)}: Err(Error("missing field `webview2`", line: 0, column: 0))
+PLUGIN CONFIG Object {"icon": String("icon.png")}: Err(Error("missing field `webview2`", line: 0, column: 0))
+SIGN TOKENIZATION "signtool sign /f C:\\certs\\test.pfx": Ok(["signtool", "sign", "/f", "C:certstest.pfx"])
+SIGN TOKENIZATION "C:\\tools\\sign.exe %1": Ok(["C:toolssign.exe", "%1"])
+SIGN TOKENIZATION "signtool sign /p pass word": Ok(["signtool", "sign", "/p", "pass", "word"])
+TAURI IDENTIFIER "": Ok("")
+TAURI IDENTIFIER "../outside": Ok("../outside")
+TAURI IDENTIFIER "C:\\Outside": Ok("C:\\Outside")
+TAURI SIGN Object {"args": Array [String("--password"), String("two words"), String("%1"), String("--quiet")], "cmd": String("C:\\Program Files\\Signer\\sign.exe")}: ["C:Program", "FilesSignersign.exe", "--password", "two", "words", "--quiet", "output.exe"]
+TAURI SIGN String("sign.exe --input \"%1\" --quiet"): ["sign.exe", "--input", "", "--quiet", "output.exe"]
+TAURI SIGN String("sign.exe --input=%1 --quiet"): ["sign.exe", "--input=", "--quiet", "output.exe"]
+  Downloading WebView2 Evergreen: https://unused.example.invalid
+  Loaded WebView2 Evergreen: MicrosoftEdgeWebview2Setup.exe (0 B)
+EMPTY WEBVIEW2 CACHE: Ok(0)

@@ -17,6 +17,11 @@ variable "virtio_iso_path" {
   description = "Path to the virtio-win ISO (from Fedora)"
 }
 
+variable "iso_checksum" {
+  type        = string
+  description = "Verified Windows ISO checksum, e.g. sha256:<hex digest>"
+}
+
 variable "output_directory" {
   type    = string
   default = "output"
@@ -59,7 +64,7 @@ source "qemu" "windows-11-arm" {
   accelerator  = "hvf"
 
   iso_url      = var.iso_path
-  iso_checksum = "none"
+  iso_checksum = var.iso_checksum
 
   disk_size      = var.disk_size
   disk_interface = "virtio"

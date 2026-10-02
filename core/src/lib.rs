@@ -1,14 +1,22 @@
 #![forbid(unsafe_code)]
 
+mod lock;
 pub mod manifest;
+mod validation;
 
 #[cfg(feature = "bundler")]
 pub mod bundle;
 
-pub use manifest::{InstallMetadata, SetupManifest};
+pub use lock::{acquire_install_lock, operation_lock_path, InstallLock};
+pub use manifest::{
+    InstallMetadata, SetupManifest, FORMAT_VERSION, MAX_METADATA_SIZE, STUB_ABI_MARKER,
+};
+pub use validation::*;
 
 #[cfg(feature = "bundler")]
-pub use bundle::{bundle, BundleError, BundleOptions, BundleOutput, WebView2Embedding};
+pub use bundle::{
+    bundle, BundleError, BundleOptions, BundleOutput, SigningCommand, WebView2Embedding,
+};
 
 /// Resource name used as a marker to identify TWI-bundled executables
 pub const TWI_RESOURCE: &str = "TWI_RESOURCE";
@@ -31,55 +39,51 @@ pub const WEBVIEW2_RESOURCE_FILENAME: &str = "TWI_WEBVIEW2_FILENAME";
 /// Filename for install metadata written to the install directory
 pub const INSTALL_METADATA_FILENAME: &str = ".twi-meta.json";
 
-/// Check if the current executable is a TWI-bundled setup
+/// Check if the current executable is a TWI-bundled setup.
 #[cfg(target_os = "windows")]
 pub fn is_bundled() -> bool {
-    libsui::find_section(TWI_RESOURCE).ok().flatten().is_some()
+    matches!(libsui::find_section(TWI_RESOURCE), Ok(Some(data)) if data == TWI_RESOURCE.as_bytes())
 }
 
-/// Extract the setup manifest from the current executable
 #[cfg(target_os = "windows")]
-pub fn get_manifest() -> SetupManifest {
-    let data = libsui::find_section(MANIFEST_RESOURCE)
-        .expect("Failed to read manifest resource")
-        .expect("Manifest resource not found");
-
-    SetupManifest::from_binary(data).expect("Failed to deserialize manifest")
+fn required_resource(name: &'static str) -> Result<&'static [u8], String> {
+    libsui::find_section(name)
+        .map_err(|e| format!("Cannot read {name}: {e}"))?
+        .ok_or_else(|| format!("Required setup resource {name} is missing"))
 }
 
-/// Extract the application data from the current executable
 #[cfg(target_os = "windows")]
-pub fn get_application_data() -> Vec<u8> {
-    libsui::find_section(APPLICATION_RESOURCE)
-        .expect("Failed to read application resource")
-        .expect("Application resource not found")
-        .to_vec()
+pub fn get_manifest() -> Result<SetupManifest, String> {
+    SetupManifest::from_binary(required_resource(MANIFEST_RESOURCE)?)
 }
 
-/// Extract the bundle (tar archive) data from the current executable
 #[cfg(target_os = "windows")]
-pub fn get_bundle_data() -> Vec<u8> {
-    libsui::find_section(BUNDLE_RESOURCE)
-        .expect("Failed to read bundle resource")
-        .expect("Bundle resource not found")
-        .to_vec()
+pub fn get_application_data() -> Result<&'static [u8], String> {
+    required_resource(APPLICATION_RESOURCE)
 }
 
-/// Extract the WebView2 installer data from the current executable, if bundled
+/// Borrow the mapped resource instead of copying the full payload.
 #[cfg(target_os = "windows")]
-pub fn get_webview2_data() -> Option<Vec<u8>> {
+pub fn get_bundle_data() -> Result<&'static [u8], String> {
+    required_resource(BUNDLE_RESOURCE)
+}
+
+#[cfg(target_os = "windows")]
+pub fn get_webview2_data() -> Result<Option<&'static [u8]>, String> {
     libsui::find_section(WEBVIEW2_RESOURCE)
-        .ok()
-        .flatten()
-        .map(|data| data.to_vec())
+        .map_err(|e| format!("Cannot read WebView2 resource: {e}"))
 }
 
-/// Get the WebView2 installer filename
 #[cfg(target_os = "windows")]
-pub fn get_webview2_filename() -> String {
-    libsui::find_section(WEBVIEW2_RESOURCE_FILENAME)
-        .ok()
-        .flatten()
-        .map(|data| String::from_utf8_lossy(data).to_string())
-        .unwrap_or_else(|| "MicrosoftEdgeWebview2Setup.exe".to_string())
+pub fn get_webview2_filename() -> Result<String, String> {
+    let filename = match libsui::find_section(WEBVIEW2_RESOURCE_FILENAME)
+        .map_err(|e| format!("Cannot read WebView2 filename: {e}"))?
+    {
+        Some(bytes) => std::str::from_utf8(bytes)
+            .map_err(|_| "Invalid UTF-8 WebView2 filename")?
+            .to_owned(),
+        None => "MicrosoftEdgeWebview2Setup.exe".into(),
+    };
+    validate_windows_filename(&filename)?;
+    Ok(filename)
 }

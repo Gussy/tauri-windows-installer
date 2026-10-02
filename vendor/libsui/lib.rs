@@ -113,10 +113,15 @@ pub struct PortableExecutable<'a> {
 impl<'a> PortableExecutable<'a> {
     /// Parse from a PE file
     pub fn from(data: &'a [u8]) -> Result<Self, Error> {
+        let image = std::panic::catch_unwind(|| editpe::Image::parse(data))
+            .map_err(|_| Error::InvalidObject("Malformed PE headers"))?
+            .map_err(|_| Error::InvalidObject("Failed to parse PE"))?;
+        // Resource payloads are retained as opaque bytes, including the native
+        // manifest and custom stub icons. A caller can explicitly replace icons.
+        let resource_dir = image.resource_directory().cloned().unwrap_or_default();
         Ok(Self {
-            image: editpe::Image::parse(data)
-                .map_err(|_| Error::InvalidObject("Failed to parse PE"))?,
-            resource_dir: editpe::ResourceDirectory::default(),
+            image,
+            resource_dir,
             icons: Vec::new(),
         })
     }
@@ -176,6 +181,8 @@ impl<'a> PortableExecutable<'a> {
         let icon = ImageReader::new(Cursor::new(icon))
             .with_guessed_format()?
             .decode()?;
+        root.remove(ResourceEntryName::ID(RT_ICON as u32));
+        root.remove(ResourceEntryName::ID(RT_GROUP_ICON as u32));
 
         // find the main icon table
         if root.get(ResourceEntryName::ID(RT_ICON as u32)).is_none() {
@@ -235,7 +242,6 @@ impl<'a> PortableExecutable<'a> {
 
     /// Build and write the modified PE file
     pub fn build<W: std::io::Write>(mut self, writer: &mut W) -> Result<(), Error> {
-        // TODO: the order of the table entries matters. this works for now.
         if !self.icons.is_empty() {
             let root = self.resource_dir.root_mut();
 
@@ -285,34 +291,102 @@ impl<'a> PortableExecutable<'a> {
             );
         }
 
-        // Sort root resource table entries by type ID. Windows FindResource
-        // uses binary search, so unsorted entries won't be found.
-        {
-            let root = self.resource_dir.root_mut();
-            let keys: Vec<ResourceEntryName> =
-                root.entries().into_iter().cloned().collect();
-            let mut entries: Vec<_> = keys
-                .into_iter()
-                .filter_map(|k| root.remove(k.clone()).map(|v| (k, v)))
-                .collect();
-            entries.sort_by(|(a, _), (b, _)| match (a, b) {
-                (ResourceEntryName::ID(a), ResourceEntryName::ID(b)) => a.cmp(b),
-                (ResourceEntryName::ID(_), _) => std::cmp::Ordering::Less,
-                (_, ResourceEntryName::ID(_)) => std::cmp::Ordering::Greater,
-                _ => std::cmp::Ordering::Equal,
-            });
-            for (name, entry) in entries {
-                root.insert(name, entry);
-            }
-        }
+        sort_resource_table(self.resource_dir.root_mut());
 
         self.image
             .set_resource_directory(self.resource_dir)
             .map_err(|_| Error::InternalError)?;
 
-        let data = self.image.data();
-        writer.write_all(data)?;
+        let mut data = self.image.data().to_vec();
+        // editpe 0.1 expands resource raw bytes without consistently updating
+        // VirtualSize / SizeOfImage. Recompute these from the final section
+        // table before the Windows loader consumes the image.
+        normalize_pe_image_size(&mut data)?;
+        writer.write_all(&data)?;
         Ok(())
+    }
+}
+
+fn normalize_pe_image_size(data: &mut [u8]) -> Result<(), Error> {
+    fn u16_at(data: &[u8], offset: usize) -> Result<u16, Error> {
+        let bytes = data
+            .get(offset..offset + 2)
+            .ok_or(Error::InvalidObject("Truncated PE header"))?;
+        Ok(u16::from_le_bytes(bytes.try_into().unwrap()))
+    }
+    fn u32_at(data: &[u8], offset: usize) -> Result<u32, Error> {
+        let bytes = data
+            .get(offset..offset + 4)
+            .ok_or(Error::InvalidObject("Truncated PE header"))?;
+        Ok(u32::from_le_bytes(bytes.try_into().unwrap()))
+    }
+    let pe = u32_at(data, 60)? as usize;
+    let optional = pe + 24;
+    let sections = u16_at(data, pe + 6)? as usize;
+    let section_table = optional + u16_at(data, pe + 20)? as usize;
+    let alignment = u32_at(data, optional + 32)?;
+    if alignment == 0 || !alignment.is_power_of_two() {
+        return Err(Error::InvalidObject("Invalid PE section alignment"));
+    }
+    let directory_offset = match u16_at(data, optional)? {
+        0x10b => 96,
+        0x20b => 112,
+        _ => return Err(Error::InvalidObject("Invalid PE optional header")),
+    };
+    let resource_va = u32_at(data, optional + directory_offset + 16)?;
+    let resource_size = u32_at(data, optional + directory_offset + 20)?;
+    let mut image_size = u32_at(data, optional + 60)?;
+    for index in 0..sections {
+        let section = section_table + index * 40;
+        let mut virtual_size = u32_at(data, section + 8)?;
+        let virtual_address = u32_at(data, section + 12)?;
+        let raw_size = u32_at(data, section + 16)?;
+        if resource_va >= virtual_address
+            && resource_va - virtual_address < virtual_size.max(raw_size)
+        {
+            let required = (resource_va - virtual_address)
+                .checked_add(resource_size)
+                .ok_or(Error::InvalidObject("PE resource size overflow"))?;
+            virtual_size = virtual_size.max(required);
+            data[section + 8..section + 12].copy_from_slice(&virtual_size.to_le_bytes());
+        }
+        let end = virtual_address
+            .checked_add(virtual_size.max(raw_size))
+            .ok_or(Error::InvalidObject("PE section size overflow"))?;
+        image_size = image_size.max(end);
+    }
+    image_size = image_size
+        .checked_add(alignment - 1)
+        .ok_or(Error::InvalidObject("PE image size overflow"))?
+        & !(alignment - 1);
+    data[optional + 56..optional + 60].copy_from_slice(&image_size.to_le_bytes());
+    Ok(())
+}
+
+fn sort_resource_table(table: &mut ResourceTable) {
+    let keys: Vec<_> = table.entries().into_iter().cloned().collect();
+    let mut entries: Vec<_> = keys
+        .into_iter()
+        .filter_map(|key| table.remove(key.clone()).map(|entry| (key, entry)))
+        .collect();
+    entries.sort_by(|(a, _), (b, _)| match (a, b) {
+        (ResourceEntryName::ID(a), ResourceEntryName::ID(b)) => a.cmp(b),
+        (ResourceEntryName::ID(_), _) => std::cmp::Ordering::Greater,
+        (_, ResourceEntryName::ID(_)) => std::cmp::Ordering::Less,
+        (ResourceEntryName::Name(a), ResourceEntryName::Name(b)) => a[2..]
+            .chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .cmp(
+                b[2..]
+                    .chunks_exact(2)
+                    .map(|c| u16::from_le_bytes([c[0], c[1]])),
+            ),
+    });
+    for (name, mut entry) in entries {
+        if let ResourceEntry::Table(child) = &mut entry {
+            sort_resource_table(child);
+        }
+        table.insert(name, entry);
     }
 }
 

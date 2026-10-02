@@ -3,7 +3,7 @@ name = "twi_bundler"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
-include = ["src/**/*", "Cargo.toml", "Cargo.lock", "setup.exe"]
+include = ["src/**/*", "build.rs", "Cargo.toml", "Cargo.lock", "setup.exe"]
 
 [[bin]]
 name = "bundler"
@@ -11,7 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 twi_core = { workspace = true, features = ["bundler"] }
-tauri.workspace = true
+tauri-utils = { version = "2", default-features = false }
 serde.workspace = true
 bytesize.workspace = true
 clap = { version = "4.6.0", features = ["derive"] }
@@ -19,7 +19,13 @@ colored = "3.1.1"
 serde_json = "1.0.149"
 reqwest = { version = "0.13.2", features = ["blocking"] }
 dirs-next = "2.0.0"
+tempfile = "3.27.0"
+sha2 = "0.10"
+editpe.workspace = true
 
 [dev-dependencies]
 mockito = "1.7.2"
 tempfile = "3.27.0"
+
+[build-dependencies]
+sha2 = "0.10"

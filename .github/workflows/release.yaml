@@ -1,174 +1,121 @@
 name: Release
-
 on:
   push:
-    tags:
-      - "v[0-9]+.[0-9]+.[0-9]+*"
+    tags: ['v[0-9]+.[0-9]+.[0-9]+*']
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing tag to release (e.g. v0.2.0)"
+        description: Existing version tag to release
         required: true
         type: string
-
 permissions:
-  contents: write
-
+  contents: read
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag || github.ref }}
   cancel-in-progress: false
-
 jobs:
   resolve-ref:
-    name: Resolve tag
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.resolve.outputs.tag }}
       version: ${{ steps.resolve.outputs.version }}
+      sha: ${{ steps.resolve.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Resolve tag
-        id: resolve
+      - id: resolve
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TAG="${{ inputs.tag }}"
-            if ! git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
-              echo "::error::Tag $TAG does not exist"
-              exit 1
-            fi
-          else
-            TAG="${GITHUB_REF#refs/tags/}"
-          fi
-          VERSION="${TAG#v}"
+          TAG="${REQUESTED_TAG:-${GITHUB_REF#refs/tags/}}"
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]] || { echo 'Invalid version tag' >&2; exit 1; }
+          SHA=$(git rev-parse --verify "refs/tags/$TAG^{commit}")
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Resolved tag: $TAG (version: $VERSION)"
-
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
   validate:
-    name: Validate version
-    needs: [resolve-ref]
+    needs: resolve-ref
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.resolve-ref.outputs.tag }}
-
-      - name: Check Cargo.toml version matches tag
+          ref: ${{ needs.resolve-ref.outputs.sha }}
+      - uses: dtolnay/rust-toolchain@1.93.1
+      - name: Match package version to tag
+        env:
+          TAG_VERSION: ${{ needs.resolve-ref.outputs.version }}
         run: |
-          CARGO_VERSION=$(grep '^package.version' Cargo.toml | sed 's/.*"\(.*\)"/\1/')
-          TAG_VERSION="${{ needs.resolve-ref.outputs.version }}"
-          echo "Cargo.toml version: $CARGO_VERSION"
-          echo "Tag version: $TAG_VERSION"
-          if [ "$CARGO_VERSION" != "$TAG_VERSION" ]; then
-            echo "::error::Version mismatch: Cargo.toml has $CARGO_VERSION but tag is v$TAG_VERSION"
-            exit 1
-          fi
-
+          CARGO_VERSION=$(cargo metadata --locked --no-deps --format-version 1 | python3 -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "twi_bundler"))')
+          test "$CARGO_VERSION" = "$TAG_VERSION"
   ci:
-    name: CI
-    needs: [validate]
+    needs: [resolve-ref, validate]
     uses: ./.github/workflows/ci.yaml
-
+    with:
+      ref: ${{ needs.resolve-ref.outputs.sha }}
   release:
-    name: Build and release
     needs: [resolve-ref, ci]
     runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.resolve-ref.outputs.tag }}
+          ref: ${{ needs.resolve-ref.outputs.sha }}
           fetch-depth: 0
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.93.1
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            C:\Users\runneradmin\.cargo\registry
-            C:\Users\runneradmin\.cargo\git
-            C:\Users\runneradmin\.rustup
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-cargo-registry-
-
-      - name: Cache target directory
-        uses: actions/cache@v4
-        with:
-          path: target
-          key: ${{ runner.os }}-${{ runner.arch }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-cargo-release-
-
-      - name: Build installer (setup.exe)
-        run: cargo build --release --package twi_installer
-
-      - name: Build bundler (bundler.exe)
-        run: cargo build --release --package twi_bundler
-
-      - name: Verify no dynamic MSVC runtime dependency
+      - uses: dtolnay/rust-toolchain@1.93.1
+      - name: Build installer
+        run: cargo build --locked --release -p twi_installer
+      - name: Sign installer stub when configured
+        if: vars.TWI_RELEASE_SIGN_PROGRAM != ''
+        shell: pwsh
+        env:
+          TWI_RELEASE_SIGN_PROGRAM: ${{ vars.TWI_RELEASE_SIGN_PROGRAM }}
+          TWI_RELEASE_SIGN_ARGS: ${{ secrets.TWI_RELEASE_SIGN_ARGS }}
+        run: ./tests/sign-release.ps1 -Files target\release\setup.exe
+      - name: Build bundler from exact stub
         shell: pwsh
         run: |
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-          if ($LASTEXITCODE -ne 0 -or -not $vsPath) {
-            throw "Visual Studio C++ tools were not found"
-          }
-          $dumpbin = Get-ChildItem "$vsPath\VC\Tools\MSVC" -Filter dumpbin.exe -Recurse -File |
-            Where-Object { $_.FullName -match '\\Hostx64\\x64\\dumpbin\.exe$' } |
-            Select-Object -First 1
-          if (-not $dumpbin) {
-            throw "dumpbin.exe was not found"
-          }
-          foreach ($binary in @('target\release\setup.exe', 'target\release\bundler.exe')) {
-            $dependencies = & $dumpbin.FullName /dependents $binary
-            if ($LASTEXITCODE -ne 0) {
-              throw "Failed to inspect $binary"
-            }
-            if ($dependencies | Select-String -Pattern '\b(?:VCRUNTIME|MSVCP)[^\s]*\.dll\b') {
-              throw "$binary depends on the Visual C++ Redistributable"
-            }
-            Write-Output "Verified no dynamic MSVC runtime dependency: $binary"
-          }
-
-      - name: Verify bundler
-        run: .\target\release\bundler.exe --version
-
-      - name: Create checksums
+          $env:TWI_SETUP_EXE = (Resolve-Path target\release\setup.exe).Path
+          cargo build --locked --release -p twi_bundler
+          if ($LASTEXITCODE -ne 0) { throw 'Bundler build failed' }
+      - name: Sign bundler when configured
+        if: vars.TWI_RELEASE_SIGN_PROGRAM != ''
         shell: pwsh
-        run: |
-          $hash = (Get-FileHash .\target\release\bundler.exe -Algorithm SHA256).Hash.ToLower()
-          "$hash  bundler.exe" | Out-File -Encoding ascii -NoNewline -FilePath .\target\release\bundler.exe.sha256
-          Write-Output "SHA256: $hash"
-
-      - name: Generate release notes
+        env:
+          TWI_RELEASE_SIGN_PROGRAM: ${{ vars.TWI_RELEASE_SIGN_PROGRAM }}
+          TWI_RELEASE_SIGN_ARGS: ${{ secrets.TWI_RELEASE_SIGN_ARGS }}
+        run: ./tests/sign-release.ps1 -Files target\release\bundler.exe
+      - name: Verify artifact version, ABI, hash, manifest, runtime, and signature policy
+        shell: pwsh
+        env:
+          EXPECTED_VERSION: ${{ needs.resolve-ref.outputs.version }}
+          RELEASE_COMMIT: ${{ needs.resolve-ref.outputs.sha }}
+          REQUIRE_SIGNATURE: ${{ vars.TWI_REQUIRE_RELEASE_SIGNATURE }}
+        run: ./tests/verify-release.ps1 -ExpectedVersion $env:EXPECTED_VERSION -Commit $env:RELEASE_COMMIT -RequireSignature:($env:REQUIRE_SIGNATURE -eq 'true')
+      - name: Release notes for requested commit
         shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.resolve-ref.outputs.tag }}
+          RELEASE_COMMIT: ${{ needs.resolve-ref.outputs.sha }}
         run: |
-          CURRENT_TAG="${{ needs.resolve-ref.outputs.tag }}"
-          PREV_TAG=$(git tag --sort=-v:refname | grep -E '^v[0-9]' | sed -n '2p')
-          if [ -z "$PREV_TAG" ]; then
-            git log --pretty=format:"- %s (%h)" "$CURRENT_TAG" > release-notes.txt
+          PREV_TAG=$(git describe --tags --match 'v[0-9]*' --abbrev=0 "$RELEASE_COMMIT^" 2>/dev/null || true)
+          if [ -n "$PREV_TAG" ]; then
+            git log --pretty=format:'- %s (%h)' "$PREV_TAG..$RELEASE_COMMIT" > release-notes.txt
           else
-            git log --pretty=format:"- %s (%h)" "${PREV_TAG}..${CURRENT_TAG}" > release-notes.txt
+            git log --pretty=format:'- %s (%h)' "$RELEASE_COMMIT" > release-notes.txt
           fi
-          echo ""
-          echo "Release notes:"
-          cat release-notes.txt
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.resolve-ref.outputs.tag }}
           name: ${{ needs.resolve-ref.outputs.tag }}
           body_path: release-notes.txt
           files: |
+            target/release/setup.exe
+            target/release/setup.exe.sha256
             target/release/bundler.exe
             target/release/bundler.exe.sha256
+            target/release/provenance.json
+          fail_on_unmatched_files: true
           draft: false
           prerelease: ${{ contains(needs.resolve-ref.outputs.tag, '-') }}
-          token: ${{ secrets.GITHUB_TOKEN }}

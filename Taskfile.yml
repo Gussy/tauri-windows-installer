@@ -4,42 +4,43 @@ tasks:
   check:
     desc: Check default crates compile (core + bundler)
     cmds:
-      - cargo check
+      - cargo check --locked
 
   check-all:
     desc: Check all workspace crates compile
     cmds:
-      - cargo check --workspace
+      - cargo check --locked --workspace
 
   test:
     desc: Run tests for default crates
     cmds:
-      - cargo test
+      - cargo test --locked
+      - bash tests/harness-regression.sh
 
   test-all:
     desc: Run tests for all workspace crates
     cmds:
-      - cargo test --workspace
+      - cargo test --locked --workspace
 
   build:
     desc: Build default crates (core + bundler)
     cmds:
-      - cargo build
+      - cargo build --locked
 
   build-installer:
     desc: Build the Windows installer (setup.exe) — Windows only
     cmds:
-      - cargo build --package twi_installer
+      - cargo build --locked --package twi_installer
 
   build-bundler:
     desc: Build the bundler (requires setup.exe to exist)
     cmds:
-      - cargo build --package twi_bundler
+      - cargo build --locked --package twi_bundler
 
   clippy:
     desc: Run clippy on the workspace
     cmds:
-      - cargo clippy --workspace
+      - cargo clippy --locked --workspace --all-targets -- -D warnings
 
   fmt:
     desc: Format all code
@@ -63,23 +64,30 @@ tasks:
 
   vm:build-image:
     desc: Build Windows 11 ARM golden image with Packer
+    dir: packer
+    requires:
+      vars: [ISO_PATH, ISO_SHA256, VIRTIO_ISO_PATH]
     cmds:
-      - cd packer && packer init . && packer build -force -var "iso_path={{.ISO_PATH}}" .
+      - packer init .
+      - packer build -var "iso_path={{.ISO_PATH}}" -var "iso_checksum=sha256:{{.ISO_SHA256}}" -var "virtio_iso_path={{.VIRTIO_ISO_PATH}}" .
 
   vm:snapshot:
     desc: Create clean baseline snapshot
+    env:
+      VM_NAME: '{{.VM_NAME | default "windows-11-test"}}'
+      SNAPSHOT_NAME: '{{.SNAPSHOT_NAME | default "clean-baseline"}}'
     cmds:
       - ./tests/helpers/vm.sh snapshot-create
 
   vm:start:
     desc: Start the test VM
     cmds:
-      - utmctl start {{.VM_NAME | default "windows-11-test"}}
+      - VM_NAME="{{.VM_NAME | default "windows-11-test"}}" ./tests/helpers/vm.sh start
 
   vm:stop:
     desc: Stop the test VM
     cmds:
-      - utmctl stop {{.VM_NAME | default "windows-11-test"}}
+      - VM_NAME="{{.VM_NAME | default "windows-11-test"}}" ./tests/helpers/vm.sh stop
 
   test:e2e:
     desc: Run all end-to-end VM tests
@@ -94,3 +102,22 @@ tasks:
       SETUP_EXE: '{{.SETUP_EXE | default "demo-app-setup.exe"}}'
     cmds:
       - ./tests/run.sh {{.CLI_ARGS}}
+
+  test:harness:
+    desc: Test shell failure propagation and VM helper contracts without a VM
+    cmds:
+      - bash tests/harness-regression.sh
+
+  test:windows:
+    desc: Run native Windows durability tests against built release artifacts
+    platforms: [windows]
+    cmds:
+      - cargo build --locked --release -p twi_installer
+      - cargo build --locked --release -p twi_uninstaller --example twi-test-app
+      - cargo build --locked --release -p twi_bundler
+      - powershell -NoProfile -File tests/windows-e2e.ps1
+
+  audit:
+    desc: Check the locked Rust dependency graph (install cargo-audit 0.22.2 first)
+    cmds:
+      - python3 tests/audit-dependencies.py

@@ -1,145 +1,243 @@
-//! Setup manifest and install metadata types.
-//!
-//! These types are shared between the bundler (which writes them) and the
-//! installer/uninstaller (which reads them).
+//! Versioned package manifests and installation ownership metadata.
 
 use serde::{Deserialize, Serialize};
 
-/// Manifest describing the setup package contents.
-///
-/// Serialized to bincode and embedded as a PE resource in the setup executable.
-/// The installer reads this at runtime to determine product name, version,
-/// install paths, etc.
+pub const FORMAT_VERSION: u32 = 1;
+pub const STUB_ABI_MARKER: &[u8] = b"TWI_SETUP_ABI_V1\0";
+const MANIFEST_MAGIC: &[u8] = b"TWI-MANIFEST\n";
+pub const MAX_METADATA_SIZE: usize = 64 * 1024;
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct SetupManifest {
-    /// Product name used for directory names and filenames.
     pub name: String,
-    /// Human-readable application title shown in the installer UI.
     pub title: String,
-    /// Semantic version string (e.g. `"1.2.3"`).
     pub version: String,
-    /// Reverse-domain identifier (e.g. `"com.example.myapp"`).
     pub identifier: String,
-    /// Main executable filename (e.g. `"my-app.exe"`).
+    /// Relative executable path, with forward slashes for nested layouts.
     pub application: String,
-    /// Publisher name shown in Windows "Add/Remove Programs".
     pub publisher: String,
-    /// Whether to create a desktop shortcut during installation.
     pub desktop_shortcut: bool,
+    /// Total regular file bytes before compression. Zero denotes a legacy package.
+    #[serde(default)]
+    pub unpacked_size: u64,
+    /// SHA-256 of the compressed bundle, in lowercase hexadecimal.
+    #[serde(default)]
+    pub bundle_sha256: String,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ManifestEnvelope {
+    format_version: u32,
+    manifest: SetupManifest,
 }
 
 impl SetupManifest {
-    /// Serialize the manifest to binary using bincode
-    pub fn to_binary(&self) -> Result<Vec<u8>, bincode::Error> {
-        bincode::serialize(self)
+    /// Serialize a bounded JSON envelope with an explicit schema version.
+    pub fn to_binary(&self) -> Result<Vec<u8>, String> {
+        crate::validate_manifest(self)?;
+        let envelope = ManifestEnvelope {
+            format_version: FORMAT_VERSION,
+            manifest: self.clone(),
+        };
+        let mut bytes = MANIFEST_MAGIC.to_vec();
+        bytes.extend(serde_json::to_vec(&envelope).map_err(|e| e.to_string())?);
+        if bytes.len() > MAX_METADATA_SIZE {
+            return Err("Package manifest exceeds the metadata size limit".into());
+        }
+        Ok(bytes)
     }
 
-    /// Deserialize a manifest from binary data
-    pub fn from_binary(data: &[u8]) -> Result<Self, bincode::Error> {
-        bincode::deserialize(data)
+    /// Read the current format and the exact fixed-width legacy bincode layout.
+    /// The legacy reader avoids retaining an unmaintained serialization dependency.
+    pub fn from_binary(data: &[u8]) -> Result<Self, String> {
+        if data.len() > MAX_METADATA_SIZE {
+            return Err("Package manifest exceeds the metadata size limit".into());
+        }
+        let manifest = if let Some(json) = data.strip_prefix(MANIFEST_MAGIC) {
+            let envelope: ManifestEnvelope = serde_json::from_slice(json)
+                .map_err(|e| format!("Invalid package manifest: {e}"))?;
+            if envelope.format_version != FORMAT_VERSION {
+                return Err(format!(
+                    "Unsupported package format {} (supported: {})",
+                    envelope.format_version, FORMAT_VERSION
+                ));
+            }
+            envelope.manifest
+        } else {
+            decode_legacy(data)?
+        };
+        crate::validate_manifest(&manifest)?;
+        Ok(manifest)
     }
 }
 
-/// Metadata written to disk during installation, read by the uninstaller.
-///
-/// Stored as JSON at [`INSTALL_METADATA_FILENAME`](crate::INSTALL_METADATA_FILENAME)
-/// in the application's install directory.
+fn decode_legacy(mut data: &[u8]) -> Result<SetupManifest, String> {
+    fn string(data: &mut &[u8]) -> Result<String, String> {
+        let length_bytes: [u8; 8] = data
+            .get(..8)
+            .ok_or("Truncated legacy manifest")?
+            .try_into()
+            .map_err(|_| "Invalid legacy string length")?;
+        *data = &data[8..];
+        let length = usize::try_from(u64::from_le_bytes(length_bytes))
+            .map_err(|_| "Legacy string length is too large")?;
+        if length > MAX_METADATA_SIZE {
+            return Err("Legacy string exceeds the metadata size limit".into());
+        }
+        let bytes = data
+            .get(..length)
+            .ok_or("Truncated legacy manifest string")?;
+        let value = std::str::from_utf8(bytes)
+            .map_err(|_| "Legacy manifest contains invalid UTF-8")?
+            .to_owned();
+        *data = &data[length..];
+        Ok(value)
+    }
+    Ok(SetupManifest {
+        name: string(&mut data)?,
+        title: string(&mut data)?,
+        version: string(&mut data)?,
+        identifier: string(&mut data)?,
+        application: string(&mut data)?,
+        publisher: string(&mut data)?,
+        desktop_shortcut: match data {
+            [0] => false,
+            [1] => true,
+            _ => return Err("Invalid or trailing legacy manifest data".into()),
+        },
+        unpacked_size: 0,
+        bundle_sha256: String::new(),
+    })
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct InstallMetadata {
-    /// Human-readable application title.
+    /// Zero is the original JSON metadata; one is the current ownership schema.
+    #[serde(default)]
+    pub format_version: u32,
     pub app_title: String,
-    /// Reverse-domain application identifier.
     pub app_id: String,
-    /// Main executable filename.
     pub app_exe: String,
-    /// Installed version string.
     pub version: String,
-    /// Whether a desktop shortcut was created during installation.
     pub desktop_shortcut: bool,
+    /// The owned shortcut's title, which can differ from the current product title.
+    #[serde(default)]
+    pub shortcut_title: Option<String>,
+}
+
+impl InstallMetadata {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.format_version > FORMAT_VERSION {
+            return Err(format!(
+                "Unsupported install metadata version {}",
+                self.format_version
+            ));
+        }
+        crate::validate_identifier(&self.app_id)?;
+        crate::validate_relative_executable(&self.app_exe)?;
+        crate::validate_windows_filename(&self.app_title)?;
+        if let Some(title) = &self.shortcut_title {
+            crate::validate_windows_filename(title)?;
+        }
+        semver::Version::parse(&self.version)
+            .map_err(|e| format!("Invalid installed version: {e}"))?;
+        Ok(())
+    }
+
+    pub fn owned_shortcut_title(&self) -> Option<&str> {
+        if !self.desktop_shortcut {
+            return None;
+        }
+        self.shortcut_title.as_deref().or(Some(&self.app_title))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_manifest_roundtrip() {
-        let manifest = SetupManifest {
-            name: "TestApp".to_string(),
-            title: "Test Application".to_string(),
-            version: "1.2.3".to_string(),
-            identifier: "com.example.testapp".to_string(),
-            application: "testapp.exe".to_string(),
-            publisher: "Example Inc.".to_string(),
+    fn manifest() -> SetupManifest {
+        SetupManifest {
+            name: "TestApp".into(),
+            title: "Test Application".into(),
+            version: "1.2.3".into(),
+            identifier: "com.example.testapp".into(),
+            application: "bin/testapp.exe".into(),
+            publisher: "Example Inc.".into(),
             desktop_shortcut: true,
-        };
-
-        let binary = manifest.to_binary().expect("Failed to serialize manifest");
-        let deserialized =
-            SetupManifest::from_binary(&binary).expect("Failed to deserialize manifest");
-
-        assert_eq!(manifest, deserialized);
+            unpacked_size: 1024,
+            bundle_sha256: "ab".repeat(32),
+        }
     }
 
     #[test]
-    fn test_manifest_fields() {
-        let manifest = SetupManifest {
-            name: "MyApp".to_string(),
-            title: "My App".to_string(),
-            version: "0.1.0".to_string(),
-            identifier: "com.example.myapp".to_string(),
-            application: "myapp.exe".to_string(),
-            publisher: "My Publisher".to_string(),
-            desktop_shortcut: true,
-        };
-
-        let binary = manifest.to_binary().unwrap();
-        let result = SetupManifest::from_binary(&binary).unwrap();
-
-        assert_eq!(result.name, "MyApp");
-        assert_eq!(result.title, "My App");
-        assert_eq!(result.version, "0.1.0");
-        assert_eq!(result.identifier, "com.example.myapp");
-        assert_eq!(result.application, "myapp.exe");
-        assert_eq!(result.publisher, "My Publisher");
-        assert_eq!(result.desktop_shortcut, true);
+    fn versioned_manifest_roundtrip() {
+        let manifest = manifest();
+        let bytes = manifest.to_binary().unwrap();
+        assert!(bytes.starts_with(MANIFEST_MAGIC));
+        assert_eq!(SetupManifest::from_binary(&bytes).unwrap(), manifest);
     }
 
     #[test]
-    fn test_manifest_empty_strings() {
-        let manifest = SetupManifest {
-            name: String::new(),
-            title: String::new(),
-            version: String::new(),
-            identifier: String::new(),
-            application: String::new(),
-            publisher: String::new(),
-            desktop_shortcut: false,
-        };
-
-        let binary = manifest.to_binary().unwrap();
-        let result = SetupManifest::from_binary(&binary).unwrap();
-        assert_eq!(manifest, result);
+    fn legacy_fixture_remains_readable() {
+        let expected = manifest();
+        // Layout emitted by bincode 1.3.3's serialize function: u64 lengths + UTF-8 + bool.
+        let mut bytes = Vec::new();
+        for value in [
+            &expected.name,
+            &expected.title,
+            &expected.version,
+            &expected.identifier,
+            &expected.application,
+            &expected.publisher,
+        ] {
+            bytes.extend((value.len() as u64).to_le_bytes());
+            bytes.extend(value.as_bytes());
+        }
+        bytes.push(1);
+        let mut legacy = expected;
+        legacy.unpacked_size = 0;
+        legacy.bundle_sha256.clear();
+        assert_eq!(SetupManifest::from_binary(&bytes).unwrap(), legacy);
+        bytes.push(0);
+        assert!(SetupManifest::from_binary(&bytes).is_err());
     }
 
     #[test]
-    fn test_manifest_invalid_binary() {
-        let result = SetupManifest::from_binary(&[0xFF, 0xFF, 0xFF]);
-        assert!(result.is_err());
+    fn unsupported_versions_and_oversized_lengths_are_errors() {
+        let mut bytes = MANIFEST_MAGIC.to_vec();
+        bytes.extend(
+            serde_json::to_vec(&serde_json::json!({
+                "format_version": 999, "manifest": manifest()
+            }))
+            .unwrap(),
+        );
+        assert!(SetupManifest::from_binary(&bytes)
+            .unwrap_err()
+            .contains("Unsupported"));
+        assert!(SetupManifest::from_binary(&u64::MAX.to_le_bytes()).is_err());
+        assert!(SetupManifest::from_binary(&vec![0; MAX_METADATA_SIZE + 1]).is_err());
     }
 
     #[test]
-    fn test_install_metadata_roundtrip() {
-        let metadata = InstallMetadata {
-            app_title: "My App".to_string(),
-            app_id: "com.example.myapp".to_string(),
-            app_exe: "myapp.exe".to_string(),
-            version: "1.0.0".to_string(),
-            desktop_shortcut: true,
-        };
+    fn unsafe_legacy_identifiers_are_rejected() {
+        let mut invalid = manifest();
+        invalid.identifier.clear();
+        assert!(invalid.to_binary().is_err());
+    }
 
-        let json = serde_json::to_string_pretty(&metadata).unwrap();
-        let deserialized: InstallMetadata = serde_json::from_str(&json).unwrap();
-        assert_eq!(metadata, deserialized);
+    #[test]
+    fn old_metadata_preserves_owned_shortcut() {
+        let metadata: InstallMetadata = serde_json::from_str(
+            r#"{
+            "app_title":"Old title", "app_id":"com.example.testapp", "app_exe":"app.exe",
+            "version":"1.0.0", "desktop_shortcut":true
+        }"#,
+        )
+        .unwrap();
+        metadata.validate().unwrap();
+        assert_eq!(metadata.owned_shortcut_title(), Some("Old title"));
+        assert_eq!(metadata.format_version, 0);
     }
 }

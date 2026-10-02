@@ -1,360 +1,349 @@
-// Prevent additional console window on Windows in release
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-#[cfg(target_os = "windows")]
+#[cfg(any(windows, test))]
+mod archive;
+#[cfg(windows)]
 mod bundle;
-#[cfg(target_os = "windows")]
+#[cfg(any(windows, test))]
+mod executable;
+#[cfg(windows)]
 mod process;
-#[cfg(target_os = "windows")]
+#[cfg(any(windows, test))]
+mod transaction;
+#[cfg(windows)]
 mod windows;
 
-#[cfg(not(target_os = "windows"))]
+// The bundler rejects stubs that cannot understand the current manifest envelope.
+#[used]
+static SETUP_ABI_MARKER: [u8; 17] = *b"TWI_SETUP_ABI_V1\0";
+
+#[cfg(not(windows))]
 fn main() {
-    eprintln!("This binary is Windows-only");
+    eprintln!("This installer is Windows-only.");
     std::process::exit(1);
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(windows)]
+#[derive(Default)]
+struct Options {
+    no_launch: bool,
+}
+
+#[cfg(windows)]
 fn main() {
-    if let Err(e) = run_installer() {
-        eprintln!("Installation failed: {}", e);
+    use std::sync::Arc;
+    std::hint::black_box(&SETUP_ABI_MARKER);
+    let silent = std::env::args_os().any(|argument| argument == "--silent");
+    let logger = Arc::new(Logger::new());
+    let panic_logger = logger.clone();
+    std::panic::set_hook(Box::new(move |panic| {
+        panic_logger.record(&format!("PANIC: {panic}"))
+    }));
+    logger.record("Installer started.");
+    let outcome = std::panic::catch_unwind(|| -> Result<(), String> {
+        let mut options = Options::default();
+        for argument in std::env::args_os().skip(1) {
+            match argument.to_str() {
+                Some("--silent") => {}
+                Some("--no-launch") => options.no_launch = true,
+                _ => {
+                    return Err(format!(
+                        "Unsupported installer argument: {}",
+                        argument.to_string_lossy()
+                    ))
+                }
+            }
+        }
+        run_installer(&logger, &options)
+    })
+    .unwrap_or_else(|_| {
+        Err(
+            "The installer stopped unexpectedly. Rerun it to recover any pending transaction."
+                .into(),
+        )
+    });
+    if let Err(error) = outcome {
+        logger.record(&format!("FAILED: {error}"));
+        let message = format!("{error}\n\n{}", logger.location());
+        eprintln!("{message}");
+        if !silent {
+            windows::show_error(&message);
+        }
         std::process::exit(1);
     }
+    logger.record("Installation completed successfully.");
 }
 
-#[cfg(target_os = "windows")]
-fn run_installer() -> Result<(), String> {
-    use crate::process::find_and_kill_processes_from_directory;
-    use crate::windows::{desktop_shortcut_exists, get_free_space, get_local_app_data};
-
+#[cfg(windows)]
+fn run_installer(logger: &Logger, options: &Options) -> Result<(), String> {
     use std::fs;
-    use std::path::Path;
-
-    // OS version check: require Windows 10+ (build >= 10240)
-    check_os_version();
-
-    // Check if this is a TWI-bundled executable
+    windows::check_os_version().map_err(display_error)?;
     if !twi_core::is_bundled() {
-        return Err("This executable is not a valid TWI setup package.".to_string());
+        return Err("This executable is not a valid TWI setup package.".into());
     }
-
-    // Extract manifest
-    let manifest = twi_core::get_manifest();
-    println!("Application: {}", manifest.name);
-
-    // Load bundle data
-    let bundle_data = twi_core::get_bundle_data();
-    let bundle_size = bundle_data.len() as u64;
-    println!("Bundle size: {}", format_bytes(bundle_size));
-
-    // Handle bundled WebView2 runtime
-    let webview2 = bundle::WebView2::load();
-    println!("Webview2 bundled: {}", webview2.bundled);
-    println!("Webview2 installed: {}", webview2.installed);
-    if !webview2.installed {
-        println!("Installing webview2 runtime...");
-        webview2
-            .install()
-            .map_err(|e| format!("Failed to install webview2 runtime: {}", e))?;
+    let manifest = twi_core::get_manifest()?;
+    twi_core::validate_manifest(&manifest)?;
+    logger.record(&format!(
+        "Package {} {} ({})",
+        manifest.title, manifest.version, manifest.identifier
+    ));
+    let appdata = windows::get_local_app_data().map_err(display_error)?;
+    let programs = appdata.join("Programs");
+    twi_core::reject_reparse_point(&programs)?;
+    fs::create_dir_all(&programs)
+        .map_err(|error| format!("Cannot create Programs directory: {error}"))?;
+    let root = twi_core::validate_install_root(&programs, &manifest.identifier)?;
+    let _lock = twi_core::acquire_install_lock(&root)?;
+    let pending_uninstall = programs.join(format!("{}.twi-uninstall.json", manifest.identifier));
+    twi_core::reject_reparse_point(&pending_uninstall)?;
+    if pending_uninstall
+        .try_exists()
+        .map_err(|error| error.to_string())?
+    {
+        return Err("An uninstall is pending. Retry uninstall from Apps & Features before installing this application again.".into());
     }
-
-    // Determine the installation directory
-    println!("Determining install directory...");
-    let appdata =
-        get_local_app_data().map_err(|e| format!("Failed to get local app data path: {}", e))?;
-    let data_root_path = Path::new(&appdata).join(&manifest.identifier);
-    let root_path = Path::new(&appdata)
-        .join("Programs")
-        .join(&manifest.identifier);
-    let log_path = data_root_path.join("installer.log");
-    if !root_path.exists() {
-        fs::create_dir_all(&root_path)
-            .map_err(|e| format!("Failed to create installation directory: {}", e))?;
-    }
-    let root_path_str = root_path.to_str().unwrap();
-    log_install(
-        &log_path,
-        &format!(
-            "installer started version={} args={:?}",
-            manifest.version,
-            std::env::args().collect::<Vec<_>>()
-        ),
-    );
-    log_install(&log_path, &format!("install directory={}", root_path_str));
-    if let Ok(cwd) = std::env::current_dir() {
-        log_install(&log_path, &format!("initial cwd={}", cwd.display()));
-    }
-    set_safe_working_directory(&log_path);
-    println!("Installation Directory: {:?}", root_path_str);
-
-    // Check if there is enough space to install the application
-    let required_space = bundle_size;
-    println!("Required disk space: {}", format_bytes(required_space));
-
-    match get_free_space(root_path_str) {
-        Ok(free_space) => {
-            if free_space < required_space {
-                return Err(format!(
-                    "{} requires at least {} disk space to be installed. There is only {} available.",
-                    manifest.title,
-                    format_bytes(required_space),
-                    format_bytes(free_space)
-                ));
-            } else {
-                println!(
-                    "There is {} free space available at destination, this package requires {}.",
-                    format_bytes(free_space),
-                    format_bytes(required_space)
-                );
-                log_install(
-                    &log_path,
-                    &format!(
-                        "disk space ok free={} required={}",
-                        free_space, required_space
-                    ),
-                );
-            }
-        }
-        Err(e) => {
-            eprintln!("Error: {}", e);
-            log_install(&log_path, &format!("failed to query free space: {}", e));
-        }
-    }
-
-    let mut root_path_renamed = String::new();
-    let mut had_existing_install = false;
-    let mut should_create_desktop_shortcut = manifest.desktop_shortcut;
-
-    // Check if the application is already installed — always overwrite silently
-    if !is_directory_empty(&root_path).unwrap() {
-        println!("Existing installation found, overwriting...");
-        had_existing_install = true;
-        log_install(&log_path, "existing installation found");
-
-        should_create_desktop_shortcut = manifest.desktop_shortcut
-            && desktop_shortcut_exists(&manifest.title)
-                .map_err(|e| format!("Failed to check desktop shortcut: {}", e))?;
-        log_install(
-            &log_path,
-            &format!(
-                "desktop shortcut configured={} preserved={}",
-                manifest.desktop_shortcut, should_create_desktop_shortcut
-            ),
-        );
-
-        // Force stop the application if it is running
-        match find_and_kill_processes_from_directory(root_path_str) {
-            Ok(_) => {
-                println!("All processes from {} have been terminated.", root_path_str);
-                log_install(&log_path, "existing processes terminated");
-            }
-            Err(e) => {
-                eprintln!("Failed to terminate processes: {}", e);
-                log_install(&log_path, &format!("process termination failed: {}", e));
-            }
-        }
-
-        // Rename the existing installation directory
-        root_path_renamed = format!("{}_{}", root_path_str, generate_random_string(8));
-        println!(
-            "Renaming existing directory to '{}' to allow rollback...",
-            root_path_renamed
-        );
-        if let Err(e) = fs::rename(&root_path, &root_path_renamed) {
-            log_install(
-                &log_path,
-                &format!(
-                    "rename failed {} -> {}: {}",
-                    root_path.display(),
-                    root_path_renamed,
-                    e
-                ),
-            );
-            return Err(format!(
-                "Failed to rename existing installation directory: {}",
-                e
-            ));
-        }
-        log_install(
-            &log_path,
-            &format!("renamed existing installation to {}", root_path_renamed),
-        );
-    }
-
-    println!("Preparing and cleaning installation directory...");
-    remove_dir_all_ext::ensure_empty_dir(&root_path)
-        .map_err(|e| format!("Failed to clean installation directory: {}", e))?;
-    log_install(&log_path, "prepared installation directory");
-
-    // Extract bundle (tar archive) to install directory
-    let install_result = extract_bundle(&bundle_data, &root_path);
-
-    // Handle rollback if installation fails
-    if let Err(e) = install_result {
-        println!("Installation failed! {}", e);
-        log_install(&log_path, &format!("bundle extraction failed: {}", e));
-        if !root_path_renamed.is_empty() {
-            println!("Rolling back installation...");
-            let _ = find_and_kill_processes_from_directory(root_path_str);
-            let _ = fs::remove_dir_all(&root_path);
-            let _ = fs::rename(&root_path_renamed, &root_path);
-            log_install(&log_path, "rollback attempted");
-        }
-
-        return Err(format!("Installation failed: {}", e));
-    }
-
-    println!("Installation completed successfully!");
-    log_install(&log_path, "bundle extraction completed");
-    if !root_path_renamed.is_empty() {
-        println!("Removing rollback directory...");
-        let _ = fs::remove_dir_all(&root_path_renamed);
-        log_install(&log_path, "removed rollback directory");
-    }
-
-    // Write the uninstall registry keys
-    windows::write_uninstall_entry(&manifest, &root_path)
-        .map_err(|e| format!("Failed to write uninstall registry key: {}", e))?;
-    log_install(&log_path, "wrote uninstall registry entry");
-
-    if should_create_desktop_shortcut {
-        windows::create_desktop_shortcut(&manifest, &root_path)
-            .map_err(|e| format!("Failed to create desktop shortcut: {}", e))?;
-        log_install(&log_path, "created desktop shortcut");
-    } else if had_existing_install && manifest.desktop_shortcut {
-        println!("Skipping desktop shortcut creation because no existing shortcut was found.");
-        log_install(
-            &log_path,
-            "skipped desktop shortcut creation because no existing shortcut was found",
-        );
-    }
-
-    // Write install metadata for the uninstaller
-    let metadata = twi_core::InstallMetadata {
-        app_title: manifest.title.clone(),
-        app_id: manifest.identifier.clone(),
-        app_exe: manifest.application.clone(),
-        version: manifest.version.clone(),
-        desktop_shortcut: should_create_desktop_shortcut,
+    // Windows holds a directory handle for the current working directory. Keep
+    // this process outside the tree it will replace, including when setup lives there.
+    std::env::set_current_dir(&programs)
+        .map_err(|error| format!("Cannot set installer working directory: {error}"))?;
+    let mut restore = |snapshot: &serde_json::Value| {
+        windows::restore_registration(snapshot, &manifest.identifier)
     };
-    let meta_path = root_path.join(twi_core::INSTALL_METADATA_FILENAME);
-    fs::write(
-        &meta_path,
-        serde_json::to_string_pretty(&metadata)
-            .map_err(|e| format!("Failed to serialize metadata: {}", e))?,
-    )
-    .map_err(|e| format!("Failed to write install metadata: {}", e))?;
-    log_install(&log_path, "wrote install metadata");
-
-    // Launch the application
-    let app_path = root_path.join(&manifest.application);
-    process::spawn_detached_process(app_path)
-        .map_err(|e| format!("Failed to start application: {}", e))?;
-    log_install(&log_path, "spawned application successfully");
-
-    Ok(())
-}
-
-#[cfg(target_os = "windows")]
-fn extract_bundle(compressed_data: &[u8], install_dir: &std::path::Path) -> Result<(), String> {
-    use std::io::{Cursor, Read};
-
-    println!("Decompressing bundle...");
-    let mut tar_data = Vec::new();
-    ruzstd::streaming_decoder::StreamingDecoder::new(Cursor::new(compressed_data))
-        .map_err(|e| format!("Failed to initialize decompressor: {}", e))?
-        .read_to_end(&mut tar_data)
-        .map_err(|e| format!("Failed to decompress bundle: {}", e))?;
-
-    println!("Extracting bundle to installation directory...");
-    let mut archive = tar::Archive::new(Cursor::new(tar_data));
-    archive
-        .unpack(install_dir)
-        .map_err(|e| format!("Failed to extract bundle: {}", e))?;
-    println!("Bundle extracted successfully.");
-    Ok(())
-}
-
-#[cfg(target_os = "windows")]
-fn check_os_version() {
-    use winreg::enums::*;
-    use winreg::RegKey;
-
-    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
-    if let Ok(nt_key) = hklm.open_subkey("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion") {
-        let build: String = nt_key
-            .get_value("CurrentBuildNumber")
-            .unwrap_or_else(|_| "0".to_string());
-        if let Ok(build_num) = build.parse::<u32>() {
-            if build_num < 10240 {
-                eprintln!(
-                    "Warning: This installer requires Windows 10 or later (build >= 10240, found {}).",
-                    build_num
-                );
+    logger.record("Recovering any previous interrupted installation.");
+    transaction::recover_with_stop(&root, &mut restore, &mut |path| {
+        process::find_and_kill_processes_from_directory(path).map_err(display_error)
+    })?;
+    twi_core::validate_install_root(&programs, &manifest.identifier)?;
+    let previous = previous_installation(&root, &manifest.identifier)?;
+    let bundle_data = twi_core::get_bundle_data()?;
+    archive::verify_digest(bundle_data, &manifest.bundle_sha256)?;
+    logger.record("Validating application archive and available storage.");
+    let unit = windows::allocation_unit(&programs).map_err(display_error)?;
+    let info = archive::inspect(bundle_data, manifest.unpacked_size, unit)?;
+    let required = info
+        .allocation_size
+        .checked_add(1024 * 1024)
+        .ok_or_else(|| "Installation storage size overflow.".to_string())?;
+    let available = windows::get_free_space(&programs).map_err(display_error)?;
+    if available < required {
+        return Err(format!(
+            "{} requires {} bytes of available storage; only {} bytes are available to this user.",
+            manifest.title, required, available
+        ));
+    }
+    let previous_owned_title = match &previous {
+        Some(metadata) => match metadata.owned_shortcut_title() {
+            Some(title)
+                if windows::shortcut_owned(title, &root, &metadata.app_exe)
+                    .map_err(display_error)? =>
+            {
+                Some(title.to_string())
+            }
+            _ => None,
+        },
+        None => None,
+    };
+    // Preserve the user's deliberate deletion/replacement of a previously owned
+    // shortcut. Enabling shortcuts after a previously disabled install creates one.
+    let create_shortcut = manifest.desktop_shortcut
+        && match &previous {
+            Some(metadata) if metadata.desktop_shortcut => previous_owned_title.is_some(),
+            _ => true,
+        };
+    if create_shortcut
+        && windows::desktop_shortcut_exists(&manifest.title).map_err(display_error)?
+    {
+        let owned = previous_owned_title
+            .as_ref()
+            .is_some_and(|title| title.eq_ignore_ascii_case(&manifest.title));
+        if !owned {
+            return Err(format!("A desktop shortcut named {} already belongs to another application or was customized. It will not be overwritten.", manifest.title));
+        }
+    }
+    let mut titles = Vec::new();
+    if let Some(title) = &previous_owned_title {
+        titles.push(title.clone());
+    }
+    if create_shortcut {
+        titles.push(manifest.title.clone());
+    }
+    let snapshot = windows::snapshot_registration(&manifest.identifier, &root, &titles)
+        .map_err(display_error)?;
+    let recovery_space = (serde_json::to_vec(&snapshot)
+        .map_err(|error| error.to_string())?
+        .len() as u64)
+        .checked_mul(2)
+        .and_then(|size| size.checked_add(required))
+        .ok_or_else(|| "Installation recovery storage size overflow.".to_string())?;
+    let available = windows::get_free_space(&programs).map_err(display_error)?;
+    if available < recovery_space {
+        return Err(format!("Insufficient storage for the application and durable recovery journal: {recovery_space} bytes required, {available} available."));
+    }
+    let mut transaction = transaction::Transaction::begin(&root, snapshot)?;
+    let install = (|| -> Result<Option<String>, String> {
+        let stage = transaction.stage()?;
+        logger.record(&format!(
+            "Extracting validated application to {}",
+            stage.display()
+        ));
+        archive::extract(bundle_data, manifest.unpacked_size, &stage)?;
+        let executable = twi_core::executable_path(&stage, &manifest.application)?;
+        executable::validate(&executable)?;
+        let metadata = twi_core::InstallMetadata {
+            format_version: twi_core::FORMAT_VERSION,
+            app_title: manifest.title.clone(),
+            app_id: manifest.identifier.clone(),
+            app_exe: manifest.application.clone(),
+            version: manifest.version.clone(),
+            desktop_shortcut: create_shortcut,
+            shortcut_title: create_shortcut.then(|| manifest.title.clone()),
+        };
+        metadata.validate()?;
+        transaction::atomic_write(
+            &stage.join(twi_core::INSTALL_METADATA_FILENAME),
+            &serde_json::to_vec_pretty(&metadata).map_err(|error| error.to_string())?,
+        )?;
+        logger.record("Checking WebView2 prerequisite.");
+        bundle::WebView2::load()
+            .map_err(display_error)?
+            .ensure_installed()
+            .map_err(display_error)?;
+        twi_core::validate_install_root(&programs, &manifest.identifier)?;
+        if root.try_exists().map_err(|error| error.to_string())? {
+            logger.record("Stopping existing application processes.");
+            process::find_and_kill_processes_from_directory(&root).map_err(display_error)?;
+        }
+        logger.record("Switching to the prepared installation.");
+        transaction.switch()?;
+        twi_core::validate_install_root(&programs, &manifest.identifier)?;
+        windows::write_uninstall_entry(&manifest, &root, info.unpacked_size)
+            .map_err(display_error)?;
+        if create_shortcut {
+            windows::create_desktop_shortcut(&manifest, &root).map_err(display_error)?;
+        }
+        if let Some(title) = &previous_owned_title {
+            if !create_shortcut || !title.eq_ignore_ascii_case(&manifest.title) {
+                windows::remove_desktop_shortcut(title).map_err(display_error)?;
+            }
+        }
+        if !options.no_launch {
+            logger.record("Launching the installed application.");
+            process::spawn_detached_process(
+                &twi_core::executable_path(&root, &manifest.application)?,
+                &root,
+            )
+            .map_err(display_error)?;
+        }
+        logger.record("Committing installation and cleaning the rollback copy.");
+        transaction.commit()
+    })();
+    match install {
+        Ok(warning) => {
+            if let Some(warning) = warning {
+                logger.record(&format!(
+                    "WARNING: Cleanup will be retried on the next installer run: {warning}"
+                ));
+            }
+            Ok(())
+        }
+        Err(error) => {
+            logger.record(&format!(
+                "Installation failed; restoring previous state: {error}"
+            ));
+            // Also stop a newly launched process if persisting the commit failed.
+            // Never kill the old app for a validation/prerequisite failure in staging.
+            if transaction::journal_path(&root)?.exists()
+                && root.join(twi_core::INSTALL_METADATA_FILENAME).exists()
+            {
+                // Killing is only required after a switch; rollback itself checks
+                // the persisted phase, so expose that state instead of assuming it.
+                if transaction.switched() {
+                    if let Err(stop_error) = process::find_and_kill_processes_from_directory(&root)
+                    {
+                        return Err(format!("{error}\nCannot stop the new application for rollback: {stop_error}. Rerun setup to recover."));
+                    }
+                }
+            }
+            match transaction.rollback(&mut restore) {
+                Ok(()) => Err(format!("{error}\nThe previous installation state was preserved.")),
+                Err(rollback) => Err(format!("{error}\nRecovery could not finish: {rollback}. The recovery journal and rollback copy were retained; rerun setup.")),
             }
         }
     }
 }
 
-#[cfg(target_os = "windows")]
-fn format_bytes(bytes: u64) -> String {
-    let units = ["B", "KB", "MB", "GB", "TB", "PB", "EB"];
-    let mut size = bytes as f64;
-    let mut unit_index = 0;
-
-    while size >= 1024.0 && unit_index < units.len() - 1 {
-        size /= 1024.0;
-        unit_index += 1;
+#[cfg(windows)]
+fn previous_installation(
+    root: &std::path::Path,
+    identifier: &str,
+) -> Result<Option<twi_core::InstallMetadata>, String> {
+    if !root.try_exists().map_err(|error| error.to_string())? {
+        return Ok(None);
     }
-
-    format!("{:.2} {}", size, units[unit_index])
-}
-
-#[cfg(target_os = "windows")]
-fn is_directory_empty(path: &std::path::Path) -> std::io::Result<bool> {
-    let mut entries = std::fs::read_dir(path)?;
-    Ok(entries.next().is_none())
-}
-
-#[cfg(target_os = "windows")]
-fn generate_random_string(length: usize) -> String {
-    use rand::distributions::Alphanumeric;
-    use rand::{thread_rng, Rng};
-    let rng = thread_rng();
-    rng.sample_iter(&Alphanumeric)
-        .take(length)
-        .map(char::from)
-        .collect()
-}
-
-#[cfg(target_os = "windows")]
-fn log_install(log_path: &std::path::Path, message: &str) {
-    use chrono::Local;
-    use std::fs::OpenOptions;
-    use std::io::Write;
-
-    if let Some(parent) = log_path.parent() {
-        let _ = std::fs::create_dir_all(parent);
+    let mut entries = std::fs::read_dir(root).map_err(|error| error.to_string())?;
+    if entries
+        .next()
+        .transpose()
+        .map_err(|error| error.to_string())?
+        .is_none()
+    {
+        return Ok(None);
     }
-
-    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(log_path) {
-        let _ = writeln!(
-            file,
-            "[{}] {}",
-            Local::now().format("%Y-%m-%d %H:%M:%S%.3f"),
-            message
-        );
+    let metadata = twi_core::read_install_metadata(root).map_err(|error| {
+        format!("Refusing to overwrite an installation without valid ownership metadata: {error}")
+    })?;
+    if metadata.app_id != identifier {
+        return Err("The existing directory belongs to another application.".into());
     }
+    Ok(Some(metadata))
 }
 
-#[cfg(target_os = "windows")]
-fn set_safe_working_directory(log_path: &std::path::Path) {
-    let temp_dir = std::env::temp_dir();
-    match std::env::set_current_dir(&temp_dir) {
-        Ok(()) => log_install(log_path, &format!("set cwd={}", temp_dir.display())),
-        Err(e) => log_install(
-            log_path,
-            &format!("failed to set cwd={} error={}", temp_dir.display(), e),
-        ),
+#[cfg(windows)]
+fn display_error(error: anyhow::Error) -> String {
+    format!("{error:#}")
+}
+
+#[cfg(windows)]
+struct Logger {
+    file: Option<std::sync::Mutex<std::fs::File>>,
+    path: Option<std::path::PathBuf>,
+}
+#[cfg(windows)]
+impl Logger {
+    fn new() -> Self {
+        let log = tempfile::Builder::new()
+            .prefix("twi-installer-")
+            .suffix(".log")
+            .tempfile()
+            .and_then(|file| file.keep().map_err(|error| error.error));
+        match log {
+            Ok((file, path)) => Self {
+                file: Some(std::sync::Mutex::new(file)),
+                path: Some(path),
+            },
+            Err(_) => Self {
+                file: None,
+                path: None,
+            },
+        }
+    }
+    fn record(&self, message: &str) {
+        use std::io::Write;
+        if let Some(file) = &self.file {
+            if let Ok(mut file) = file.lock() {
+                let _ = writeln!(
+                    file,
+                    "[{}] {message}",
+                    chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f")
+                );
+                let _ = file.flush();
+            }
+        }
+    }
+    fn location(&self) -> String {
+        match &self.path {
+            Some(path) => format!("Diagnostic log: {}", path.display()),
+            None => "A diagnostic log could not be created in the temporary directory.".into(),
+        }
     }
 }

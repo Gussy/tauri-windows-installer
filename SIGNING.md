@@ -1,120 +1,76 @@
-# Code Signing
+# Code signing
 
-Code signing your setup executable ensures Windows SmartScreen doesn't block your installer and gives users confidence the file hasn't been tampered with.
-
-Signing happens **after** the bundler finishes building the PE — all resource embedding, icon injection, and manifest writing complete first, then the sign command runs on the final output file.
+Authenticode signing identifies the publisher and protects the final executable against modification. Signing runs after PE resource, icon, version and manifest changes. A valid signature does not guarantee that SmartScreen will suppress a warning; Microsoft states that EV certificates no longer receive an automatic reputation bypass. See [SmartScreen reputation for developers](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/smartscreen-reputation).
 
 ## Configuration
 
-You can provide a sign command in two ways. The CLI flag takes precedence over the plugin config.
+Resolution order is CLI `--sign-command`, plugin `signCommand`, then Tauri `bundle.windows.signCommand`. Structured Tauri commands retain their program and argument boundaries. `%1` is substituted in place, including inside an argument; when absent, the output filename is appended. Commands run directly as a program, so shell operators and environment-variable expansion require an explicit wrapper script.
 
-### CLI flag
-
-```bash
-bundler -c tauri.conf.json -a target/release/myapp.exe -t "My App" \
-  --sign-command "signtool sign /fd SHA256 /f cert.pfx /p password"
+```powershell
+bundler -c tauri.conf.json -a app.exe --sign-command 'signtool sign /fd SHA256 /sha1 THUMBPRINT /tr http://timestamp.digicert.com /td SHA256 %1'
 ```
 
-### Plugin config (tauri.conf.json)
+Use the certificate store or a wrapper that reads credentials securely. Avoid putting passwords directly in command-line configuration.
+
+Structured Tauri configuration supports executable paths and arguments containing spaces:
 
 ```json
 {
-  "plugins": {
-    "tauri-windows-installer": {
-      "signCommand": "signtool sign /fd SHA256 /f cert.pfx /p password"
+  "bundle": {
+    "windows": {
+      "signCommand": {
+        "cmd": "C:\\Program Files\\Signer\\sign.exe",
+        "args": ["--input=%1", "--timestamp", "http://timestamp.example.com"]
+      }
     }
   }
 }
 ```
 
-The bundler parses the command string using shell quoting rules and appends the output file path as the last argument. For example, if the sign command is `signtool sign /fd SHA256` and the output is `MyApp-setup.exe`, the bundler runs:
+For library calls:
 
-```
-signtool sign /fd SHA256 MyApp-setup.exe
-```
+```rust
+use twi_core::SigningCommand;
 
-## Examples
-
-### signtool (Windows SDK)
-
-Using a PFX certificate file:
-
-```bash
---sign-command "signtool sign /fd SHA256 /f path/to/cert.pfx /p YOUR_PASSWORD /tr http://timestamp.digicert.com /td SHA256"
-```
-
-Using a certificate from the Windows certificate store:
-
-```bash
---sign-command "signtool sign /fd SHA256 /sha1 THUMBPRINT /tr http://timestamp.digicert.com /td SHA256"
+let command = SigningCommand {
+    program: "signtool.exe".into(),
+    args: vec![
+        "sign".into(), "/fd".into(), "SHA256".into(),
+        "/sha1".into(), "THUMBPRINT".into(),
+        "/tr".into(), "http://timestamp.digicert.com".into(),
+        "/td".into(), "SHA256".into(), "%1".into(),
+    ],
+};
+// Set BundleOptions.sign_command = Some(command).
 ```
 
-### Azure Trusted Signing
-
-```bash
---sign-command "signtool sign /fd SHA256 /tr http://timestamp.acs.microsoft.com /td SHA256 /dlib Microsoft.Trusted.Signing.Client/bin/x64/Azure.CodeSigning.Dlib.dll /dmdf metadata.json"
-```
-
-### osslsigncode (cross-platform)
-
-For signing from macOS or Linux:
-
-```bash
---sign-command "osslsigncode sign -certs cert.pem -key key.pem -ts http://timestamp.digicert.com -h sha256 -in"
-```
-
-Note: `osslsigncode` uses `-in <file>` rather than a trailing positional argument. Since TWI appends the file path as the last argument, use `-in` as the final flag and the path will follow it naturally.
-
-### Custom script
-
-Wrap complex signing logic in a script:
-
-```bash
---sign-command "./scripts/sign.sh"
-```
-
-The script receives the file path as `$1`:
-
-```bash
-#!/bin/bash
-set -euo pipefail
-signtool sign /fd SHA256 /f "$CERT_PATH" /p "$CERT_PASSWORD" \
-  /tr http://timestamp.digicert.com /td SHA256 "$1"
-```
-
-## Timestamping
-
-Always include a timestamp server (`/tr` for signtool, `-ts` for osslsigncode). Without it, the signature expires when the certificate does.
-
-Common timestamp servers:
-- `http://timestamp.digicert.com`
-- `http://timestamp.sectigo.com`
-- `http://timestamp.acs.microsoft.com` (Azure Trusted Signing)
-
-## Testing with a self-signed certificate
-
-For development and testing:
+The bundler rejects signer failure, missing certificate output and changed package resources. These structural checks do not establish certificate-chain trust. Validate the final executable with Windows Authenticode verification before distributing it:
 
 ```powershell
-# Create a self-signed code signing certificate
-$cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=TWI Test" -CertStoreLocation Cert:\CurrentUser\My
-
-# Export to PFX
-$password = ConvertTo-SecureString -String "test123" -Force -AsPlainText
-Export-PfxCertificate -Cert $cert -FilePath test-cert.pfx -Password $password
-
-# Sign
-bundler -c tauri.conf.json -a app.exe -t "My App" \
-  --sign-command "signtool sign /fd SHA256 /f test-cert.pfx /p test123"
+signtool verify /pa /all /v MyApp-setup.exe
+Get-AuthenticodeSignature .\MyApp-setup.exe
 ```
 
-Self-signed certificates will still trigger SmartScreen warnings. To avoid SmartScreen, you need a certificate from a trusted CA or an EV certificate.
+## macOS / Linux signing
 
-## SmartScreen
+`osslsigncode` writes a separate output. Use a wrapper that replaces the input only after successful signing:
 
-Windows SmartScreen uses two signals to decide whether to warn users:
+```sh
+#!/usr/bin/env bash
+set -euo pipefail
+output=$(mktemp "${1}.signed.XXXXXX")
+trap 'rm -f "$output"' EXIT
+osslsigncode sign -certs "$CERT_PATH" -key "$KEY_PATH" \
+  -ts http://timestamp.digicert.com -h sha256 -in "$1" -out "$output"
+mv "$output" "$1"
+```
 
-1. **Signature** — Is the file signed with a certificate from a trusted CA?
-2. **Reputation** — Has this publisher signed enough files that users have installed without issues?
+Invoke it with `--sign-command ./scripts/sign.sh`. Verify the result on Windows as well as with `osslsigncode verify`.
 
-An EV (Extended Validation) certificate bypasses reputation requirements and removes SmartScreen warnings immediately. Standard OV (Organization Validation) certificates build reputation over time.
+## Timestamping and releases
+
+Include a timestamp using signtool `/tr` with `/td SHA256`, or osslsigncode `-ts`, so certificate expiration does not invalidate an otherwise valid signing-time signature.
+
+The release workflow can sign both the bare setup stub and the bundler. Configure repository variable `TWI_RELEASE_SIGN_PROGRAM` and secret `TWI_RELEASE_SIGN_ARGS` as a JSON argument array. The signer receives `%1` in place or a trailing filename. The stub is signed before embedding; the bundler is signed after compilation. Both outputs must then have a valid timestamped Authenticode signature.
+
+Set repository variable `TWI_REQUIRE_RELEASE_SIGNATURE` to `true` to prevent unsigned releases. Without it signing is optional and provenance records the actual signature status. `tests/verify-release.ps1` additionally validates the embedded stub hash, ABI, schema, version and static MSVC runtime. No credentials or signing services are provisioned automatically.
