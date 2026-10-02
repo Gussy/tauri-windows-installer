@@ -91,11 +91,20 @@ fn programs_dir() -> Result<PathBuf> {
 fn powershell_path() -> Result<PathBuf> {
     let system = env::var_os("SystemRoot")
         .ok_or_else(|| anyhow!("Windows system directory is unavailable"))?;
-    let path = PathBuf::from(system).join("System32/WindowsPowerShell/v1.0/powershell.exe");
+    let path = powershell_path_in(Path::new(&system));
     if !path.is_file() {
         bail!("Windows PowerShell is unavailable");
     }
     Ok(path)
+}
+fn powershell_path_in(system: &Path) -> PathBuf {
+    // PathBuf preserves separators inside pushed strings. Use separate components
+    // so the serialized command exactly matches the worker's Windows command.
+    system
+        .join("System32")
+        .join("WindowsPowerShell")
+        .join("v1.0")
+        .join("powershell.exe")
 }
 fn prepare_uninstall() -> Result<()> {
     let programs = programs_dir()?;
@@ -260,7 +269,8 @@ fn prepare_uninstall() -> Result<()> {
         // durable retry command when a later invocation cannot start it.
         if !existing_recovery {
             fs::remove_file(&marker)?;
-            let _ = fs::remove_dir_all(&state.worker);
+            // Retain the worker's initialization diagnostics after restoring the
+            // live application's registration. The error names cleanup.log.
         }
         return Err(error);
     }
@@ -376,4 +386,21 @@ fn flush_registry(key: &RegKey) -> Result<()> {
         RegFlushKey(HKEY(key.raw_handle() as *mut core::ffi::c_void)).ok()?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn powershell_command_path_matches_worker_native_separators() {
+        assert_eq!(
+            powershell_path_in(Path::new(r"C:\Windows")),
+            PathBuf::from(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe")
+        );
+        assert_eq!(
+            powershell_path_in(Path::new(r"C:\Windows")).to_string_lossy(),
+            r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+        );
+    }
 }

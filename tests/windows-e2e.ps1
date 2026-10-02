@@ -279,7 +279,16 @@ public static class TwiDirectoryLock {
     Write-Host "Native Windows durability checks passed: $($passed.Count)"
 } finally {
     if (Test-Path -LiteralPath (Join-Path $dataRoot 'installer.log')) { Copy-Item -LiteralPath (Join-Path $dataRoot 'installer.log') -Destination (Join-Path $ArtifactDirectory 'installer.log') -Force }
-    Get-ChildItem -LiteralPath ([IO.Path]::GetTempPath()) -Filter 'twi-installer-*.log' -File | Where-Object { $_.LastWriteTimeUtc -ge [DateTime]::UtcNow.AddHours(-1) } | Copy-Item -Destination $ArtifactDirectory -Force
+    Get-ChildItem -LiteralPath ([IO.Path]::GetTempPath()) -Filter 'twi-*.log' -File | Where-Object { $_.LastWriteTimeUtc -ge [DateTime]::UtcNow.AddHours(-1) } | Copy-Item -Destination $ArtifactDirectory -Force
+    $workerParent = Join-Path (Split-Path $root) '.twi-uninstall-workers'
+    if (Test-Path -LiteralPath $workerParent) {
+        Get-ChildItem -LiteralPath $workerParent -Directory | Where-Object { $_.Name.StartsWith($id + '-') } | ForEach-Object {
+            if (Test-Path -LiteralPath (Join-Path $_.FullName 'cleanup.log')) {
+                Copy-Item -LiteralPath (Join-Path $_.FullName 'cleanup.log') -Destination (Join-Path $ArtifactDirectory ($_.Name + '-cleanup.log')) -Force
+            }
+        }
+    }
+    $passed | Set-Content -LiteralPath (Join-Path $ArtifactDirectory 'passed.txt')
     # The identifier is unique and this suite created these paths. Preserve failed
     # installation trees for diagnosis; never sweep arbitrary Programs directories.
     Remove-Item -LiteralPath $shortcut1, $shortcut2 -Force -ErrorAction SilentlyContinue
