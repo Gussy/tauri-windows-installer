@@ -64,6 +64,9 @@ jobs:
           ref: ${{ needs.resolve-ref.outputs.sha }}
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@1.93.1
+      - name: Remap build-host paths in binaries
+        shell: pwsh
+        run: ./tests/configure-path-remap.ps1
       - name: Build installer
         run: cargo build --locked --release -p twi_installer
       - name: Sign installer stub when configured
