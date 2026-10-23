@@ -53,7 +53,7 @@ fn process_archive(
         return Err("The package exceeds the maximum supported installed size (32 GiB).".into());
     }
     let mut input = Cursor::new(data);
-    let decoder = ruzstd::streaming_decoder::StreamingDecoder::new(&mut input)
+    let decoder = ruzstd::decoding::StreamingDecoder::new(&mut input)
         .map_err(|error| format!("Cannot initialize the application decompressor: {error}"))?;
     let mut reader = BoundedReader {
         inner: decoder,
