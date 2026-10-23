@@ -46,14 +46,33 @@ function Run-Setup([string]$path, [bool]$expectSuccess = $true, [bool]$launch = 
     $process.Refresh()
     Assert (($process.ExitCode -eq 0) -eq $expectSuccess) "Unexpected setup exit: $($process.ExitCode)"
 }
+function Test-OperationLocksFree {
+    # The cleanup worker removes its marker and registration while still holding
+    # the operation lock, so a finished-looking uninstall can still block setup.
+    $lockDir = Join-Path (Split-Path $root) '.twi-locks'
+    if (-not (Test-Path -LiteralPath $lockDir)) { return $true }
+    foreach ($lock in @(Get-ChildItem -LiteralPath $lockDir -Filter '*.lock' -File -Force)) {
+        $stream = $null
+        try {
+            $stream = [IO.FileStream]::new($lock.FullName, [IO.FileMode]::Open, [IO.FileAccess]::ReadWrite, [IO.FileShare]::ReadWrite)
+            $stream.Lock(0, [long]::MaxValue)
+            $stream.Unlock(0, [long]::MaxValue)
+        } catch [IO.IOException] {
+            return $false
+        } finally {
+            if ($null -ne $stream) { $stream.Dispose() }
+        }
+    }
+    return $true
+}
 function Wait-Cleanup {
     $deadline = [DateTime]::UtcNow.AddSeconds(45)
     do {
         $leftovers = @(Get-ChildItem -LiteralPath (Split-Path $root) -Directory | Where-Object { $_.Name.StartsWith($id) })
-        if ($leftovers.Count -eq 0 -and -not (Test-Path -LiteralPath $registry) -and -not (Test-Path -LiteralPath ($root + '.twi-uninstall.json'))) { return }
+        if ($leftovers.Count -eq 0 -and -not (Test-Path -LiteralPath $registry) -and -not (Test-Path -LiteralPath ($root + '.twi-uninstall.json')) -and (Test-OperationLocksFree)) { return }
         Start-Sleep -Milliseconds 200
     } while ([DateTime]::UtcNow -lt $deadline)
-    throw 'Original or renamed uninstall directory / registration remains'
+    throw 'Original or renamed uninstall directory / registration / operation lock remains'
 }
 function Package([string]$version, [string]$application, [string]$title, [bool]$shortcut = $true) {
     $source = Join-Path $work ('source-' + $version + '-' + $shortcut)
