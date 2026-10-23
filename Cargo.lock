@@ -767,7 +767,7 @@ dependencies = [
 
 [[package]]
 name = "demo-app"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -4697,7 +4697,7 @@ dependencies = [
 
 [[package]]
 name = "twi_bundler"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "bytesize",
  "clap",
@@ -4716,7 +4716,7 @@ dependencies = [
 
 [[package]]
 name = "twi_core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "editpe",
  "indexmap 2.14.2",
@@ -4732,7 +4732,7 @@ dependencies = [
 
 [[package]]
 name = "twi_installer"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4753,7 +4753,7 @@ dependencies = [
 
 [[package]]
 name = "twi_uninstaller"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "serde",
