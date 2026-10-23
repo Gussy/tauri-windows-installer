@@ -21,6 +21,9 @@ jobs:
       - name: Install locked frontend dependencies
         working-directory: demo-app
         run: pnpm install --frozen-lockfile
+      - name: Remap build-host paths in binaries
+        shell: pwsh
+        run: ./tests/configure-path-remap.ps1
       - name: Build installer first, then embed it in bundler
         shell: pwsh
         run: |

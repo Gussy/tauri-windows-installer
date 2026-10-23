@@ -75,6 +75,9 @@ jobs:
             ~/.cargo/git
             target
           key: ${{ runner.os }}-rust-1.93.1-${{ hashFiles('Cargo.lock') }}
+      - name: Remap build-host paths in binaries
+        shell: pwsh
+        run: ./tests/configure-path-remap.ps1
       - name: Build runtime and fixture before bundler
         shell: pwsh
         run: |

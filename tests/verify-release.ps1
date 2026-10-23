@@ -37,5 +37,27 @@ foreach ($binary in @($SetupStub, $Bundler)) {
     "$binaryHash  $filename" | Set-Content -LiteralPath ($binary + '.sha256') -Encoding ascii
     $files += @{ name = $filename; sha256 = $binaryHash; signature_status = [string]$signature.Status }
 }
+# Build-host paths (panic locations, C __FILE__ strings) must be remapped by
+# configure-path-remap.ps1 before building. Check ASCII and UTF-16LE text.
+$hostPaths = @('\Users\')
+if ($env:USERNAME) { $hostPaths += $env:USERNAME }
+if ($env:TWI_REMAPPED_PATHS) { $hostPaths += $env:TWI_REMAPPED_PATHS -split ';' }
+foreach ($binary in @($SetupStub, $Bundler)) {
+    $bytes = [IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $binary).Path)
+    $texts = @(
+        [Text.Encoding]::Latin1.GetString($bytes),
+        [Text.Encoding]::Unicode.GetString($bytes),
+        [Text.Encoding]::Unicode.GetString($bytes, 1, $bytes.Length - 1)
+    )
+    foreach ($needle in $hostPaths | Where-Object { $_ } | Select-Object -Unique) {
+        foreach ($text in $texts) {
+            $at = $text.IndexOf($needle, [StringComparison]::OrdinalIgnoreCase)
+            if ($at -ge 0) {
+                $context = $text.Substring([Math]::Max(0, $at - 40), [Math]::Min(160, $text.Length - [Math]::Max(0, $at - 40)))
+                throw "$binary embeds build-host path '$needle': $context"
+            }
+        }
+    }
+}
 @{ commit = $Commit; package_version = $ExpectedVersion; format_version = $info.format_version; stub_sha256 = $hash; files = $files } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path (Split-Path $Bundler) 'provenance.json') -Encoding utf8
-Write-Host 'Verified release versions, stub hash/ABI/manifest, signatures policy, and static MSVC runtime.'
+Write-Host 'Verified release versions, stub hash/ABI/manifest, signatures policy, static MSVC runtime, and no build-host paths.'
