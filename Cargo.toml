@@ -8,7 +8,7 @@ members = [
     "uninstaller",
     "tests/glib-backport",
 ]
-package.version = "0.2.0"
+package.version = "0.2.1"
 package.edition = "2021"
 package.authors = ["@Gussy"]
 package.license = "MIT"
